@@ -1,0 +1,11 @@
+{
+  "name": "senstosales-root",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "docs:api": "python scripts/generate_api_docs.py",
+    "docs:components": "python scripts/sync_component_docs.py",
+    "docs:all": "npm run docs:api && npm run docs:components",
+    "postinstall": "npm run docs:all"
+  }
+}
