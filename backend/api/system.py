@@ -138,3 +138,14 @@ async def reconcile_all(db: sqlite3.Connection = Depends(get_db)):
         logger.error(f"Global reconciliation failed: {e}", exc_info=True)
         db.rollback()
         raise internal_error(str(e), e)
+
+
+@router.post("/pick-folder")
+def pick_folder_endpoint():
+    """
+    Open system folder picker dialog (Server-side).
+    Only works if running locally as EXE/Script.
+    """
+    from backend.utils.dialogs import open_folder_picker
+    path = open_folder_picker()
+    return {"path": path}

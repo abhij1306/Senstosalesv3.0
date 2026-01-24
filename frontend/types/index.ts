@@ -97,6 +97,65 @@ export interface Alert {
 }
 
 // ============================================================
+// SETTINGS & BUYER TYPES
+// ============================================================
+
+export interface Settings {
+    supplier_name?: string;
+    supplier_description?: string;
+    supplier_address?: string;
+    supplier_gstin?: string;
+    supplier_contact?: string;
+    supplier_email?: string;
+    supplier_phone?: string;
+    supplier_state?: string;
+    supplier_state_code?: string;
+    pan_number?: string;
+    buyer_name?: string;
+    buyer_address?: string;
+    buyer_gstin?: string;
+    buyer_state?: string;
+    buyer_state_code?: string;
+    bank_name?: string;
+    bank_branch?: string;
+    bank_account_no?: string;
+    bank_ifsc?: string;
+    default_consignee_name?: string;
+    cgst_rate?: string;
+    sgst_rate?: string;
+    igst_rate?: string;
+    payment_terms?: string;
+}
+
+export interface Buyer {
+    id: number;
+    name: string;
+    gstin?: string;
+    billing_address?: string;
+    shipping_address?: string;
+    address?: string; // Legacy support
+    place_of_supply?: string;
+    state?: string;
+    state_code?: string;
+    is_default: boolean;
+    is_active: boolean;
+    created_at?: string;
+}
+
+export interface DownloadPrefs {
+    id?: number;
+    po_html?: string;
+    srv_html?: string;
+    challan?: string;
+    invoice?: string;
+    challan_summary?: string;
+    invoice_summary?: string;
+    items_summary?: string;
+    gc?: string;
+    updated_at?: string;
+}
+
+// ============================================================
 // REPORT TYPES
 // ============================================================
 
@@ -333,8 +392,8 @@ export interface DCStats {
 export interface DCCreate {
     dc_number: string;
     dc_date: string;
-    po_number?: number;
-    department_no?: number;
+    po_number?: string;
+    department_no?: number | null;
     consignee_name?: string;
     consignee_gstin?: string;
     consignee_address?: string;
