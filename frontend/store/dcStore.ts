@@ -139,7 +139,7 @@ export const useDCStore = create<DCState>((set) => ({
         isCheckingNumber: false,
         isDuplicateNumber: false,
         conflictType: null
-    }) as DCState
+    })
 }));
 
 // Optimized Selectors

@@ -74,9 +74,9 @@ class Settings(BaseSettings):
     # CORS Configuration
     CORS_ALLOW_ORIGINS: str = os.environ.get(
         "CORS_ALLOW_ORIGINS",
-        "*"
+        "http://localhost:3000,http://127.0.0.1:3000"
     )
-    CORS_ALLOW_ALL_ORIGINS: bool = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "true").lower() == "true"
+    CORS_ALLOW_ALL_ORIGINS: bool = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "false").lower() == "true"
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
