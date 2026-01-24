@@ -148,7 +148,7 @@ def create_invoice(invoice_data: dict, db: sqlite3.Connection) -> ServiceResult[
                 conflict_msg = f"Document number {invoice_number} is already used by a Delivery Challan in FY {result['financial_year']}."
             raise ConflictError(
                 conflict_msg,
-                details={"invoice_number": invoice_number, "financial_year": result['financial_year']},
+                details={"invoice_number": invoice_number, "financial_year": result["financial_year"]},
             )
 
         # Validate header
@@ -213,27 +213,26 @@ def create_invoice(invoice_data: dict, db: sqlite3.Connection) -> ServiceResult[
 
         for item in dc_items:
             po_item_id = item["po_item_id"]
-            
+
             # LOCK RULE: Verify if already fully received at item level
-            recon_row = db.execute(
-                "SELECT ord_qty, dsp_qty, rcd_qty FROM purchase_order_items WHERE id = ?",
-                (po_item_id,)
-            ).fetchone()
-            
+            recon_row = db.execute("SELECT ord_qty, dsp_qty, rcd_qty FROM purchase_order_items WHERE id = ?", (po_item_id,)).fetchone()
+
             if recon_row:
                 global_ordered = recon_row["ord_qty"]
                 # recon_row["dsp_qty"] (unused variable removed)
                 global_received = recon_row["rcd_qty"] or 0
-                
+
                 # We allow invoicing of the current DC items even if it pushes us to 'fully dispatched'
                 # but we check if we were ALREADY over-fulfilled before this invoice
                 # Actually, the user wants to lock FURTHER creation.
                 # Since DC already exists, we usually allow invoicing it.
                 # But if Received >= Ordered, we might want to alert or block.
                 # The user said "lock further DC or invoice creation".
-                
+
                 if global_received >= global_ordered - 0.001:
-                     logger.warning(f"Item {item['po_item_no']} already fully received ({global_received}/{global_ordered}). Proceeding with invoice for existing DC.")
+                    logger.warning(
+                        f"Item {item['po_item_no']} already fully received ({global_received}/{global_ordered}). Proceeding with invoice for existing DC."
+                    )
 
             # The following block is part of the original item processing, but the user's snippet
             # seems to imply a different structure. Re-integrating it to fit the existing logic.
@@ -260,7 +259,7 @@ def create_invoice(invoice_data: dict, db: sqlite3.Connection) -> ServiceResult[
         for dci in dc_items:
             p_id = dci["po_item_id"]
             if p_id not in consolidated_dc_items:
-                consolidated_dc_items[p_id] = dict(dci) # Copy to avoid mutating original
+                consolidated_dc_items[p_id] = dict(dci)  # Copy to avoid mutating original
             else:
                 consolidated_dc_items[p_id]["dsp_qty"] += dci["dsp_qty"]
 
@@ -269,7 +268,7 @@ def create_invoice(invoice_data: dict, db: sqlite3.Connection) -> ServiceResult[
         for dci in consolidated_dc_items.values():
             # Use po_item_no for override matching.
             item_no = str(dci.get("po_item_no") or "")
-            
+
             # Default values from consolidated DC entry
             qty = dci["dsp_qty"]
             rate = dci["po_rate"]
@@ -297,7 +296,7 @@ def create_invoice(invoice_data: dict, db: sqlite3.Connection) -> ServiceResult[
             invoice_items.append(
                 {
                     "po_item_id": dci["po_item_id"],
-                    "po_item_no": item_no, # Ensure we use the actual PO Item Number
+                    "po_item_no": item_no,  # Ensure we use the actual PO Item Number
                     "description": dci["description"] or "",
                     "material_code": dci.get("material_code") or "",
                     "drg_no": dci.get("drg_no") or "",
@@ -398,7 +397,7 @@ def create_invoice(invoice_data: dict, db: sqlite3.Connection) -> ServiceResult[
                 inv_header["supplier_name"],
                 inv_header["supplier_address"],
                 inv_header["supplier_gstin"],
-                inv_header["supplier_contact"]
+                inv_header["supplier_contact"],
             ),
         )
 
@@ -461,11 +460,11 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
     """
     Generate a preview of the invoice from the DC without saving.
     Optimized for performance: Does heavy lifting on backend (Tax, Aggregation).
-    
+
     Args:
         dc_number: Source DC
         db: Connection
-        
+
     Returns:
         ServiceResult with 'header' and 'items'
     """
@@ -473,7 +472,7 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
         # 1. Check if already invoiced (Fast fail)
         existing = check_dc_already_invoiced(dc_number, db)
         if existing:
-             return ServiceResult.fail(
+            return ServiceResult.fail(
                 error_code=ErrorCode.CONFLICT,
                 message=f"Delivery Challan {dc_number} has already been invoiced (Invoice: {existing}).",
             )
@@ -481,11 +480,11 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
         # 2. Fetch DC Items
         dc_items, dc_header = fetch_dc_items(dc_number, db)
         if not dc_items:
-             return ServiceResult.fail(
+            return ServiceResult.fail(
                 error_code=ErrorCode.RESOURCE_NOT_FOUND,
                 message=f"DC {dc_number} not found or has no items",
             )
-            
+
         # 3. Fetch PO Date for Header
         po_date = None
         if dc_header.get("po_number"):
@@ -494,7 +493,9 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
                 po_date = po_row[0]
 
         # 4. Fetch Global Settings
-        settings_rows = db.execute("SELECT key, value FROM settings WHERE key IN ('cgst_rate', 'sgst_rate', 'supplier_name', 'supplier_address', 'supplier_gstin', 'supplier_contact')").fetchall()
+        settings_rows = db.execute(
+            "SELECT key, value FROM settings WHERE key IN ('cgst_rate', 'sgst_rate', 'supplier_name', 'supplier_address', 'supplier_gstin', 'supplier_contact')"
+        ).fetchall()
         settings = {row["key"]: row["value"] for row in settings_rows}
         cgst_rate = float(settings.get("cgst_rate", 9.0))
         sgst_rate = float(settings.get("sgst_rate", 9.0))
@@ -514,35 +515,37 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
         total_taxable = 0.0
         total_cgst = 0.0
         total_sgst = 0.0
-        
+
         for dci in consolidated.values():
             qty = dci["dsp_qty"]
             if qty <= 0:
                 continue
-            
+
             rate = dci["po_rate"] or 0
             taxable = round(qty * rate, 2)
             cgst = round(taxable * cgst_rate / 100, 2)
             sgst = round(taxable * sgst_rate / 100, 2)
             total = taxable + cgst + sgst
-            
+
             item_no = str(dci.get("po_item_no") or "")
-            
-            invoice_items.append({
-                "po_item_no": item_no,
-                "material_code": dci.get("material_code"),
-                "description": dci.get("description"),
-                "hsn_sac": dci.get("hsn_code") or "",
-                "quantity": qty,
-                "unit": dci.get("unit") or "NOS",
-                "rate": rate,
-                "taxable_value": taxable,
-                "cgst_amount": cgst,
-                "sgst_amount": sgst,
-                "total_amount": total,
-                "items_in_lot": 1 # Virtual count
-            })
-            
+
+            invoice_items.append(
+                {
+                    "po_item_no": item_no,
+                    "material_code": dci.get("material_code"),
+                    "description": dci.get("description"),
+                    "hsn_sac": dci.get("hsn_code") or "",
+                    "quantity": qty,
+                    "unit": dci.get("unit") or "NOS",
+                    "rate": rate,
+                    "taxable_value": taxable,
+                    "cgst_amount": cgst,
+                    "sgst_amount": sgst,
+                    "total_amount": total,
+                    "items_in_lot": 1,  # Virtual count
+                }
+            )
+
             total_taxable += taxable
             total_cgst += cgst
             total_sgst += sgst
@@ -560,7 +563,7 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
             "buyer_gstin": dc_header.get("consignee_gstin"),
             "buyer_address": dc_header.get("consignee_address"),
             "remarks": dc_header.get("remarks"),
-             # Financials
+            # Financials
             "total_taxable_value": total_taxable,
             "cgst_total": total_cgst,
             "sgst_total": total_sgst,
@@ -568,7 +571,7 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
             "supplier_name": settings.get("supplier_name"),
             "supplier_address": settings.get("supplier_address"),
             "supplier_gstin": settings.get("supplier_gstin"),
-            "supplier_contact": settings.get("supplier_contact")
+            "supplier_contact": settings.get("supplier_contact"),
         }
 
         # Auto-match logic removed as per user request to favor default DC details and manual editing.
@@ -586,36 +589,36 @@ def generate_invoice_preview(dc_number: str, db: sqlite3.Connection) -> ServiceR
 def delete_invoice(invoice_number: str, db: sqlite3.Connection) -> ServiceResult[dict]:
     """
     Delete an Invoice
-    
+
     INVARIANTS:
     - Invoice cannot be deleted if SRV items reference this invoice's DC
-    
+
     Args:
         invoice_number: Invoice number to delete
         db: Database connection (must be in transaction)
-        
+
     Returns:
         ServiceResult with success status
     """
     try:
         # Check if invoice exists
-        invoice_row = db.execute(
-            "SELECT invoice_number, dc_number FROM gst_invoices WHERE invoice_number = ?", 
-            (invoice_number,)
-        ).fetchone()
-        
+        invoice_row = db.execute("SELECT invoice_number, dc_number FROM gst_invoices WHERE invoice_number = ?", (invoice_number,)).fetchone()
+
         if not invoice_row:
             raise ResourceNotFoundError("Invoice", invoice_number)
-        
+
         dc_number = invoice_row["dc_number"]
-        
+
         # INVARIANT: INV-3 - Invoice cannot be deleted if SRV items reference its DC
-        srv_row = db.execute("""
+        srv_row = db.execute(
+            """
             SELECT srv_number FROM srv_items 
             WHERE challan_no = ? 
             LIMIT 1
-        """, (dc_number,)).fetchone()
-        
+        """,
+            (dc_number,),
+        ).fetchone()
+
         if srv_row:
             raise ConflictError(
                 f"Cannot delete Invoice {invoice_number} - its DC {dc_number} has received goods in SRV {srv_row['srv_number']}",
@@ -626,16 +629,16 @@ def delete_invoice(invoice_number: str, db: sqlite3.Connection) -> ServiceResult
                     "invariant": "INV-3",
                 },
             )
-        
+
         # Delete invoice items first
         db.execute("DELETE FROM gst_invoice_items WHERE invoice_number = ?", (invoice_number,))
-        
+
         # Delete invoice header
         db.execute("DELETE FROM gst_invoices WHERE invoice_number = ?", (invoice_number,))
-        
+
         logger.info(f"Successfully deleted Invoice {invoice_number}")
         return ServiceResult.ok({"success": True, "message": f"Invoice {invoice_number} deleted"})
-        
+
     except (ResourceNotFoundError, ConflictError):
         raise
     except Exception as e:

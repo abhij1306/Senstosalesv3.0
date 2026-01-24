@@ -29,14 +29,17 @@ def check_duplicate_number(
     """
 
     from backend.services.validation_service import ValidationService
-    
+
     try:
         result = ValidationService.check_duplicate_number(db, type, number, date)
-        logger.debug(f"Duplicate check for {type} #{number} in FY {result['financial_year']}: "
-                     f"{'CONFLICT with ' + result['conflict_type'] if result['exists'] else 'OK'}")
+        logger.debug(
+            f"Duplicate check for {type} #{number} in FY {result['financial_year']}: "
+            f"{'CONFLICT with ' + result['conflict_type'] if result['exists'] else 'OK'}"
+        )
         return result
 
     except Exception as e:
         logger.error(f"Error checking duplicate for {type}: {e}", exc_info=True)
         from backend.core.errors import internal_error
+
         raise internal_error("System error during duplicate validation. Document creation paused for safety.", e)

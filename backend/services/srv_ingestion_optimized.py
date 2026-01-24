@@ -105,21 +105,25 @@ async def process_srv_batch(srv_batch: list[dict], db: sqlite3.Connection, po_fr
             item_count = len(srv_data.get("items", []))
 
             if success:
-                results.append({
-                    "success": True, 
-                    "srv_number": header["srv_number"], 
-                    "item_count": item_count,
-                    "status_type": status_type,
-                    "message": "Processed successfully"
-                })
+                results.append(
+                    {
+                        "success": True,
+                        "srv_number": header["srv_number"],
+                        "item_count": item_count,
+                        "status_type": status_type,
+                        "message": "Processed successfully",
+                    }
+                )
             else:
-                results.append({
-                    "success": False, 
-                    "srv_number": header["srv_number"], 
-                    "item_count": item_count,
-                    "status_type": "FAILED",
-                    "message": "Database insertion failed"
-                })
+                results.append(
+                    {
+                        "success": False,
+                        "srv_number": header["srv_number"],
+                        "item_count": item_count,
+                        "status_type": "FAILED",
+                        "message": "Database insertion failed",
+                    }
+                )
 
         # Commit entire batch
         db.commit()
@@ -149,7 +153,7 @@ def ingest_srv_batch(srv_data: dict, db: sqlite3.Connection) -> bool:
         # Get SRV financial year for FY-aware linking
         srv_date = header.get("srv_date")
         srv_fy = get_financial_year(srv_date) if srv_date else None
-        
+
         # Insert SRV header
         db.execute(
             """
@@ -178,22 +182,19 @@ def ingest_srv_batch(srv_data: dict, db: sqlite3.Connection) -> bool:
             # FY-aware challan linking: only link if DC exists in same FY
             challan_no = item.get("challan_no")
             validated_challan_no = None
-            
+
             if challan_no and srv_fy:
-                dc = db.execute(
-                    "SELECT dc_number, dc_date FROM delivery_challans WHERE dc_number = ?",
-                    (str(challan_no),)
-                ).fetchone()
-                
+                dc = db.execute("SELECT dc_number, dc_date FROM delivery_challans WHERE dc_number = ?", (str(challan_no),)).fetchone()
+
                 if dc:
                     dc_fy = get_financial_year(dc["dc_date"]) if dc["dc_date"] else None
                     if dc_fy == srv_fy:
                         validated_challan_no = challan_no  # Same FY, link is valid
                     # If FY mismatch, don't link (validated_challan_no stays None)
                 # If DC doesn't exist, don't link
-            
+
             item_id = f"{header['srv_number']}_{item['po_item_no']}_{item.get('lot_no', 0)}_{item.get('srv_item_no', 0)}"
-            
+
             item_data.append(
                 (
                     item_id,
@@ -222,16 +223,12 @@ def ingest_srv_batch(srv_data: dict, db: sqlite3.Connection) -> bool:
                     datetime.now().isoformat(),
                 )
             )
-            
+
             # Check for qty mismatch deviation
             srv_ord_qty = to_qty(item.get("ord_qty", 0))
             if srv_ord_qty > 0:
                 DeviationService.check_qty_mismatch(
-                    db=db,
-                    srv_item_id=item_id,
-                    po_number=header["po_number"],
-                    po_item_no=item["po_item_no"],
-                    srv_ord_qty=srv_ord_qty
+                    db=db, srv_item_id=item_id, po_number=header["po_number"], po_item_no=item["po_item_no"], srv_ord_qty=srv_ord_qty
                 )
 
         db.executemany(
@@ -267,9 +264,6 @@ def delete_srv_fast(srv_number: str, db: sqlite3.Connection) -> tuple[bool, str]
 
     except Exception as e:
         return False, f"Error deleting SRV: {e!s}"
-
-
-
 
 
 def reconcile_po_fast(db: sqlite3.Connection, po_number: str) -> None:

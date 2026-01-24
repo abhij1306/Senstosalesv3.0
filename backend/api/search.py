@@ -24,24 +24,24 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
     # ============================================================
     # 1. Document Numbers: ALWAYS usage PREFIX matching (q%)
     # 2. Party Names: Only search if query is NOT strictly numeric (avoids "Sector 3" matching "3")
-    # 3. Metadata (Code, Drg, Cat): 
+    # 3. Metadata (Code, Drg, Cat):
     #    - If Numeric: Only search if len >= 4 (avoids noise like matching Cat "100" with "1")
     #    - If Text: Always search (allows searching "SCREW", "DWG-A")
     # ============================================================
-    
+
     prefix_search = f"{q}%"
     fuzzy_search = f"%{q}%"
-    
+
     is_numeric = q.isdigit()
-    
+
     # RULE 1: If numeric, DO NOT search party names (addresses often contain numbers)
     search_party = not is_numeric
-    
+
     # RULE 2: If numeric, use STRICT PREFIX matching for metadata to be precise yet inclusive.
     # Allow 3+ digits (e.g., "700") to match "700140", but encoded strictly to avoid noise.
     # If text, continue using fuzzy matching.
     search_metadata = (not is_numeric) or (is_numeric and len(q) >= 3)
-    
+
     # Define the pattern to use for metadata
     metadata_pattern = prefix_search if is_numeric else fuzzy_search
 
@@ -77,13 +77,13 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
             LEFT JOIN po_recd_agg r ON CAST(po.po_number AS TEXT) = CAST(r.po_number AS TEXT)
             WHERE (CAST(po.po_number AS TEXT) LIKE ? 
         """
-        
+
         po_params = [prefix_search]
-        
+
         if search_party:
             po_query += " OR po.supplier_name LIKE ?"
             po_params.append(fuzzy_search)
-            
+
         if search_metadata:
             po_query += """
                OR EXISTS (
@@ -93,7 +93,7 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
                )
             """
             po_params.extend([metadata_pattern, metadata_pattern, metadata_pattern])
-            
+
         po_query += (
             ") ORDER BY CASE WHEN CAST(po.po_number AS TEXT) = ? THEN 0 "
             "WHEN CAST(po.po_number AS TEXT) LIKE ? THEN 1 ELSE 2 END, "
@@ -110,42 +110,45 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
             dc_rows = db.execute("SELECT dc_number FROM delivery_challans WHERE po_number = ?", (po_num,)).fetchall()
             dc_numbers = [r["dc_number"] for r in dc_rows] if dc_rows else []
             # Fetch linked Invoices (via DCs)
-            inv_rows = db.execute("""
+            inv_rows = db.execute(
+                """
                 SELECT DISTINCT inv.invoice_number FROM gst_invoices inv
                 JOIN delivery_challans dc ON inv.dc_number = dc.dc_number
                 WHERE dc.po_number = ?
-            """, (po_num,)).fetchall()
+            """,
+                (po_num,),
+            ).fetchall()
             invoice_numbers = [r["invoice_number"] for r in inv_rows] if inv_rows else []
             # Fetch linked SRVs
             srv_rows = db.execute("SELECT srv_number FROM srvs WHERE po_number = ?", (po_num,)).fetchall()
             srv_numbers = [r["srv_number"] for r in srv_rows] if srv_rows else []
-            
+
             # Identify Match Context (Why did we find this PO?)
             # If the header didn't match, check the items for the metadata match
             match_context = None
             if q not in str(po_num) and search_metadata:
-                 # Check what matched
-                 meta_match = db.execute("""
+                # Check what matched
+                meta_match = db.execute(
+                    """
                     SELECT material_code, drg_no, mtrl_cat FROM purchase_order_items 
                     WHERE po_number = ? AND (material_code LIKE ? OR drg_no LIKE ? OR CAST(mtrl_cat AS TEXT) LIKE ?)
                     LIMIT 1
-                 """, (po_num, metadata_pattern, metadata_pattern, metadata_pattern)).fetchone()
-                 
-                 if meta_match:
-                     # Use lowercase for robust checking (SQL matches are case-insensitive)
-                     q_lower = q.lower()
-                     if meta_match['drg_no'] and q_lower in str(meta_match['drg_no']).lower():
-                         match_context = f"Drg: {meta_match['drg_no']}"
-                     elif meta_match['material_code'] and q_lower in str(meta_match['material_code']).lower():
-                         match_context = f"Code: {meta_match['material_code']}"
-                     elif meta_match['mtrl_cat'] and q_lower in str(meta_match['mtrl_cat']).lower():
-                         match_context = f"Cat: {meta_match['mtrl_cat']}"
+                 """,
+                    (po_num, metadata_pattern, metadata_pattern, metadata_pattern),
+                ).fetchone()
+
+                if meta_match:
+                    # Use lowercase for robust checking (SQL matches are case-insensitive)
+                    q_lower = q.lower()
+                    if meta_match["drg_no"] and q_lower in str(meta_match["drg_no"]).lower():
+                        match_context = f"Drg: {meta_match['drg_no']}"
+                    elif meta_match["material_code"] and q_lower in str(meta_match["material_code"]).lower():
+                        match_context = f"Code: {meta_match['material_code']}"
+                    elif meta_match["mtrl_cat"] and q_lower in str(meta_match["mtrl_cat"]).lower():
+                        match_context = f"Cat: {meta_match['mtrl_cat']}"
 
             # Check if this PO has any unresolved deviations
-            dev_exists = db.execute(
-                "SELECT 1 FROM deviations WHERE po_number = ? AND is_resolved = 0 LIMIT 1",
-                (str(po_num),)
-            ).fetchone()
+            dev_exists = db.execute("SELECT 1 FROM deviations WHERE po_number = ? AND is_resolved = 0 LIMIT 1", (str(po_num),)).fetchone()
 
             results.append(
                 {
@@ -197,13 +200,13 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
             LEFT JOIN dc_ord_agg o ON dc.dc_number = o.dc_number
             WHERE (CAST(dc.dc_number AS TEXT) LIKE ? 
         """
-        
+
         dc_params = [prefix_search]
 
         if search_party:
             dc_query += " OR dc.consignee_name LIKE ?"
             dc_params.append(fuzzy_search)
-            
+
         if search_metadata:
             dc_query += """
                OR EXISTS (
@@ -214,7 +217,7 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
                )
             """
             dc_params.extend([fuzzy_search, fuzzy_search, fuzzy_search])
-            
+
         dc_query += (
             ") ORDER BY CASE WHEN CAST(dc.dc_number AS TEXT) = ? THEN 0 "
             "WHEN CAST(dc.dc_number AS TEXT) LIKE ? THEN 1 ELSE 2 END, "
@@ -237,12 +240,15 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
             srv_numbers = [r["srv_number"] for r in srv_rows] if srv_rows else []
             # Calculate total value from items (dsp_qty * po_rate)
             total_value = 0
-            value_row = db.execute("""
+            value_row = db.execute(
+                """
                 SELECT SUM(dci.dsp_qty * COALESCE(poi.po_rate, 0)) as total_val
                 FROM delivery_challan_items dci
                 LEFT JOIN purchase_order_items poi ON dci.po_item_id = poi.id
                 WHERE dci.dc_number = ?
-            """, (dc_num,)).fetchone()
+            """,
+                (dc_num,),
+            ).fetchone()
             if value_row and value_row["total_val"]:
                 total_value = value_row["total_val"]
             # Check if this DC has any unresolved deviations
@@ -254,7 +260,7 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
                 OR (entity_type = 'srv_item' AND entity_id IN (SELECT id FROM srv_items WHERE challan_no = ?))
                 AND is_resolved = 0 LIMIT 1
                 """,
-                (str(dc_num), str(dc_num))
+                (str(dc_num), str(dc_num)),
             ).fetchone()
 
             results.append(
@@ -301,13 +307,13 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
             LEFT JOIN inv_recd_agg r ON inv.invoice_number = r.invoice_number
             WHERE (CAST(inv.invoice_number AS TEXT) LIKE ? 
         """
-        
+
         inv_params = [prefix_search]
 
         if search_party:
             inv_query += " OR inv.buyer_name LIKE ?"
             inv_params.append(fuzzy_search)
-        
+
         if search_metadata:
             inv_query += """
                OR EXISTS (
@@ -317,7 +323,7 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
                )
             """
             inv_params.extend([fuzzy_search, fuzzy_search, fuzzy_search])
-            
+
         inv_query += (
             ") ORDER BY CASE WHEN CAST(inv.invoice_number AS TEXT) = ? THEN 0 "
             "WHEN CAST(inv.invoice_number AS TEXT) LIKE ? THEN 1 ELSE 2 END, "
@@ -342,7 +348,7 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
                 WHERE (entity_type = 'srv_item' AND entity_id IN (SELECT id FROM srv_items WHERE invoice_no = ?))
                 AND is_resolved = 0 LIMIT 1
                 """,
-                (str(d["invoice_number"]),)
+                (str(d["invoice_number"]),),
             ).fetchone()
 
             results.append(
@@ -385,17 +391,17 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
             LEFT JOIN srv_items_agg i ON s.srv_number = i.srv_number
             WHERE (CAST(s.srv_number AS TEXT) LIKE ? 
         """
-        
+
         srv_params = [prefix_search]
-        
+
         # NOTE: For SRV, we always search PO Number mostly because it's a primary ID often used to find SRVs
         # But we respect the numeric rule to avoid noise from partial matches if it's a short text
         if is_numeric:
-             srv_query += " OR CAST(s.po_number AS TEXT) LIKE ?"
-             srv_params.append(prefix_search) # Prefix for PO in SRV search too
+            srv_query += " OR CAST(s.po_number AS TEXT) LIKE ?"
+            srv_params.append(prefix_search)  # Prefix for PO in SRV search too
         else:
-             srv_query += " OR CAST(s.po_number AS TEXT) LIKE ?"
-             srv_params.append(fuzzy_search) # Relaxed for text (though PO is usually numeric)
+            srv_query += " OR CAST(s.po_number AS TEXT) LIKE ?"
+            srv_params.append(fuzzy_search)  # Relaxed for text (though PO is usually numeric)
 
         if search_metadata:
             srv_query += """
@@ -407,7 +413,7 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
                )
             """
             srv_params.extend([fuzzy_search, fuzzy_search, fuzzy_search])
-            
+
         srv_query += (
             ") ORDER BY CASE WHEN CAST(s.srv_number AS TEXT) = ? THEN 0 "
             "WHEN CAST(s.srv_number AS TEXT) LIKE ? THEN 1 ELSE 2 END, "
@@ -425,15 +431,15 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
             # Check if linked documents exist
             # Optimized checks
             po_exists = (
-                bool(db.execute("SELECT 1 FROM purchase_orders WHERE po_number = ?", (d["po_number"],)).fetchone()) 
-                if d["po_number"] else False
+                bool(db.execute("SELECT 1 FROM purchase_orders WHERE po_number = ?", (d["po_number"],)).fetchone()) if d["po_number"] else False
             )
             dc_exists = bool(db.execute("SELECT 1 FROM delivery_challans WHERE dc_number = ?", (dc_number,)).fetchone()) if dc_number else False
             invoice_exists = (
-                bool(db.execute("SELECT 1 FROM gst_invoices WHERE invoice_number = ?", (d["invoice_number"],)).fetchone()) 
-                if d["invoice_number"] else False
+                bool(db.execute("SELECT 1 FROM gst_invoices WHERE invoice_number = ?", (d["invoice_number"],)).fetchone())
+                if d["invoice_number"]
+                else False
             )
-            
+
             # Check if this SRV has any unresolved deviations
             dev_exists = db.execute(
                 """
@@ -442,7 +448,7 @@ def global_search(q: str, db: sqlite3.Connection = Depends(get_db)):
                 OR (entity_type = 'srv_item' AND entity_id LIKE ?)
                 AND is_resolved = 0 LIMIT 1
                 """,
-                (str(d["srv_number"]), f"{d['srv_number']}\_%")
+                (str(d["srv_number"]), f"{d['srv_number']}\_%"),
             ).fetchone()
 
             results.append(

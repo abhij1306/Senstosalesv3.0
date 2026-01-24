@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Bootstrap Database on Import/Startup
 try:
     from backend.db.bootstrap import bootstrap_db
+
     bootstrap_db()
 except Exception as e:
     logger.error(f"Failed to bootstrap database: {e}")
@@ -83,9 +84,6 @@ async def app_exception_handler(request: Request, exc: AppException):
     )
 
 
-
-
-
 @app.exception_handler(ResourceNotFoundException)
 async def resource_not_found_handler(request: Request, exc: ResourceNotFoundException):
     return JSONResponse(
@@ -112,8 +110,7 @@ app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(buyers.router, prefix="/api/buyers", tags=["Buyers"])
 app.include_router(search.router, prefix="/api/search", tags=["Search"])
 app.include_router(deviations.router, prefix="/api/deviations", tags=["Deviations"])
-app.include_router(system.router, prefix="/api/system", tags=["System"]) # Included system router
-
+app.include_router(system.router, prefix="/api/system", tags=["System"])  # Included system router
 
 
 @app.get("/")
@@ -125,8 +122,9 @@ if __name__ == "__main__":
     import sys
 
     import uvicorn
-    is_frozen = getattr(sys, 'frozen', False)
-    
+
+    is_frozen = getattr(sys, "frozen", False)
+
     if is_frozen:
         # Pass the app object directly to avoid import issues
         uvicorn.run(app, host="0.0.0.0", port=8000)

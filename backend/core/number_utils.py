@@ -3,7 +3,6 @@ Number utility functions for Sales Manager
 """
 
 
-
 def to_int(value: str | int | float | None) -> int | None:
     """
     Convert value to integer, handling None and string inputs
@@ -80,6 +79,7 @@ def safe_to_float(value: str | int | float | None, default: float = 0.0, label: 
     if val is None:
         if value is not None and str(value).strip() != "":
             import logging
+
             logging.getLogger(__name__).warning(f"⚠️ Corrupt {label} value: '{value}'. Defaulting to {default}")
         return default
     return val
@@ -93,6 +93,7 @@ def safe_to_int(value: str | int | float | None, default: int = 0, label: str = 
     if val is None:
         if value is not None and str(value).strip() != "":
             import logging
+
             logging.getLogger(__name__).warning(f"⚠️ Corrupt {label} value: '{value}'. Defaulting to {default}")
         return default
     return val

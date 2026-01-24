@@ -41,6 +41,7 @@ class BuyerCreate(BaseModel):
     is_default: bool = False
     is_active: bool = True
 
+
 @router.post("/", response_model=Buyer)
 @transactional
 def create_buyer(buyer: BuyerCreate, db: sqlite3.Connection = Depends(get_db)):

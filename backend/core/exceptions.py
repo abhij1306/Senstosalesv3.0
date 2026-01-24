@@ -111,7 +111,6 @@ class ErrorCode(str, Enum):
     PARSE_ERROR = "PARSE_ERROR"
 
 
-
 class DomainError(AppException):
     def __init__(self, message: str, error_code: ErrorCode, details: dict = None):
         super().__init__(

@@ -11,7 +11,7 @@ def open_folder_picker(initial_dir: str = "") -> str | None:
         # PowerShell command to open FolderBrowserDialog
         # -NoProfile -NonInteractive speeds it up
         # We use System.Windows.Forms for the dialog
-        
+
         # Prepare initial dir path (escape for Powershell)
         init_dir_arg = ""
         if initial_dir and os.path.isdir(initial_dir):
@@ -28,33 +28,23 @@ def open_folder_picker(initial_dir: str = "") -> str | None:
         if ($d.ShowDialog() -eq 'OK') {{ Write-Host $d.SelectedPath }}
         """
 
-        cmd = [
-            "powershell", 
-            "-NoProfile", 
-            "-NonInteractive", 
-            "-Command", 
-            ps_script
-        ]
+        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script]
 
         # creationflags=0x08000000 (CREATE_NO_WINDOW) prevents the black console window flashing on Windows
-        creation_flags = 0x08000000 if os.name == 'nt' else 0
-        
-        result = subprocess.run(
-            cmd, 
-            capture_output=True, 
-            text=True, 
-            creationflags=creation_flags
-        )
-        
+        creation_flags = 0x08000000 if os.name == "nt" else 0
+
+        result = subprocess.run(cmd, capture_output=True, text=True, creationflags=creation_flags)
+
         path = result.stdout.strip()
         if path and os.path.isdir(path):
             return path
-            
+
         return None
 
     except Exception as e:
         print(f"Picker error: {e}")
         return None
+
 
 if __name__ == "__main__":
     print(open_folder_picker())

@@ -59,21 +59,18 @@ async def reset_database(db: sqlite3.Connection = Depends(get_db)):
         # 3. Re-seed Defaults (Self-healing system)
         # Seed settings if they don't exist
         default_settings = [
-            ('supplier_name', 'Your Company Name'),
-            ('supplier_gstin', '23AAAAAAAAAAAAA'),
-            ('supplier_address', '123 Business Avenue, Industrial Park, Your City - 000000'),
-            ('supplier_contact', '+91 00000 00000'),
-            ('supplier_state', 'State Name'),
-            ('supplier_state_code', '00'),
-            ('cgst_rate', '9.0'),
-            ('sgst_rate', '9.0'),
-            ('payment_terms', '45')
+            ("supplier_name", "Your Company Name"),
+            ("supplier_gstin", "23AAAAAAAAAAAAA"),
+            ("supplier_address", "123 Business Avenue, Industrial Park, Your City - 000000"),
+            ("supplier_contact", "+91 00000 00000"),
+            ("supplier_state", "State Name"),
+            ("supplier_state_code", "00"),
+            ("cgst_rate", "9.0"),
+            ("sgst_rate", "9.0"),
+            ("payment_terms", "45"),
         ]
-        db.executemany(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)",
-            default_settings
-        )
-        
+        db.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", default_settings)
+
         # Ensure download preferences exist with proper defaults
         db.execute("""
             INSERT OR IGNORE INTO user_download_prefs (

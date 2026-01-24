@@ -214,7 +214,6 @@ def check_reconciliation_view():
         return False
 
 
-
 def main():
     """Run all validation checks"""
     print_header("SENSTOSALES SYSTEM VALIDATION")

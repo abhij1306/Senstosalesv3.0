@@ -39,7 +39,7 @@ class POService:
                     SUM(rej_qty) as total_rej
                 FROM purchase_order_items
             """).fetchone()
-            
+
             total_dsp = aggregates[0] if aggregates and aggregates[0] else 0.0
             total_rej = aggregates[1] if aggregates and aggregates[1] else 0.0
 
@@ -49,7 +49,7 @@ class POService:
                 total_value_ytd=total_value,
                 total_value_change=0.0,
                 total_shipped_qty=total_dsp,
-                total_rejected_qty=total_rej
+                total_rejected_qty=total_rej,
             )
         except Exception as e:
             logger.error(f"Error calculating PO stats: {e}")
@@ -86,7 +86,7 @@ class POService:
             "total_dsp_qty": "total_dsp",
             "total_rcd_qty": "total_rcd",
             "total_rej_qty": "total_rej",
-            "total_items_count": "total_items"
+            "total_items_count": "total_items",
         }
 
         db_sort_col = sort_map.get(sort_by, "po.created_at")
@@ -97,7 +97,7 @@ class POService:
             FROM purchase_orders po
             LEFT JOIN purchase_order_items poi ON po.po_number = poi.po_number
         """
-        
+
         where_clause = ""
         params = []
         if search:
@@ -131,7 +131,7 @@ class POService:
             ORDER BY {db_sort_col} {db_order}
             LIMIT ? OFFSET ?
         """
-        
+
         rows = db.execute(items_query, params + [limit, offset]).fetchall()
 
         results = []
@@ -140,7 +140,7 @@ class POService:
             t_dsp = row["total_dsp"] or 0
             t_rcd = row["total_rcd"] or 0
             t_rej = row["total_rej"] or 0
-            
+
             # Use status from DB or recalculate if needed (PO status is usually stable once ingested)
             # Determing Status using CENTRALIZED logic to stay consistent with detail view
             accepted = max(0.0, t_rcd - t_rej)

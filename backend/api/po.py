@@ -52,24 +52,15 @@ def list_pos(
     sort_by: str = "created_at",
     order: str = "desc",
     search: str | None = None,
-    db: sqlite3.Connection = Depends(get_db)
+    db: sqlite3.Connection = Depends(get_db),
 ):
     """List all Purchase Orders with quantity details (Paginated)"""
-    items, total_count = po_service.list_pos(
-        db, limit=limit, offset=offset, sort_by=sort_by, order=order, search=search
-    )
-    
+    items, total_count = po_service.list_pos(db, limit=limit, offset=offset, sort_by=sort_by, order=order, search=search)
+
     # Calculate current page for metadata
     page = (offset // limit) + 1
-    
-    return PaginatedResponse(
-        items=items,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=page,
-            limit=limit
-        )
-    )
+
+    return PaginatedResponse(items=items, metadata=PaginatedMetadata(total_count=total_count, page=page, limit=limit))
 
 
 @router.get("/{po_number}", response_model=PODetail)
@@ -206,23 +197,27 @@ async def process_po_update(po_data: PODetail, db: sqlite3.Connection):
         # Map nested lots
         if item.deliveries:
             for d in item.deliveries:
-                item_map["deliveries"].append({
-                    "LOT NO": d.lot_no,
-                    "DELY QTY": d.ord_qty,
-                    "DELY DATE": d.dely_date,
-                    "ENTRY ALLOW DATE": d.entry_allow_date,
-                    "DEST CODE": d.dest_code,
-                    "manual_override_qty": d.manual_override_qty or d.dsp_qty or 0.0,
-                })
+                item_map["deliveries"].append(
+                    {
+                        "LOT NO": d.lot_no,
+                        "DELY QTY": d.ord_qty,
+                        "DELY DATE": d.dely_date,
+                        "ENTRY ALLOW DATE": d.entry_allow_date,
+                        "DEST CODE": d.dest_code,
+                        "manual_override_qty": d.manual_override_qty or d.dsp_qty or 0.0,
+                    }
+                )
         else:
             # Fallback for manual items without specific lots
-            item_map["deliveries"].append({
-                "LOT NO": 1,
-                "DELY QTY": item.ord_qty,
-                "DELY DATE": po_data.header.po_date,
-                "ENTRY ALLOW DATE": None, # Explicitly NULL if not provided
-                "DEST CODE": po_data.header.department_no or 1,
-            })
+            item_map["deliveries"].append(
+                {
+                    "LOT NO": 1,
+                    "DELY QTY": item.ord_qty,
+                    "DELY DATE": po_data.header.po_date,
+                    "ENTRY ALLOW DATE": None,  # Explicitly NULL if not provided
+                    "DEST CODE": po_data.header.department_no or 1,
+                }
+            )
 
         items_list.append(item_map)
 
@@ -261,7 +256,7 @@ async def upload_po_html(file: UploadFile = File(...), db: sqlite3.Connection = 
 
     ingestion_service = POIngestionService()
     success, warnings, _ = ingestion_service.ingest_po(db, po_header, po_items)
-    
+
     if not success:
         raise ValidationError(f"Ingestion logic returned failure: {warnings}")
 
@@ -294,7 +289,7 @@ async def upload_po_batch(files: list[UploadFile] = File(...), db: sqlite3.Conne
             try:
                 content = await file.read()
             except Exception:
-                content = await file.read() 
+                content = await file.read()
 
             soup = BeautifulSoup(content, "lxml")
             po_header = extract_po_header(soup)
@@ -345,5 +340,3 @@ def download_po_excel(po_number: str, db: sqlite3.Connection = Depends(get_db)):
         )
     except Exception as e:
         raise internal_error(f"Failed to generate Excel: {e!s}", e) from e
-
-

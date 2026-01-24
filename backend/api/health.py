@@ -86,9 +86,9 @@ def readiness_check(db: sqlite3.Connection = Depends(get_db)) -> dict[str, Any]:
             try:
                 os.makedirs(logs_dir, exist_ok=True)
             except Exception:
-                pass # Non-critical failure
-        
-        # In frozen mode, we might be in a read-only temp dir, but usually we start 
+                pass  # Non-critical failure
+
+        # In frozen mode, we might be in a read-only temp dir, but usually we start
         # from the EXE dir which should be writable.
         if os.path.exists(logs_dir) and os.access(logs_dir, os.W_OK):
             checks["filesystem"] = "healthy"

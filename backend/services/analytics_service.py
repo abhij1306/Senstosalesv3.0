@@ -6,7 +6,7 @@ class AnalyticsService:
     @staticmethod
     def get_rejection_profile(db: sqlite3.Connection, limit: int = 10, start_date: str | None = None):
         """Top materials by rejection rate
-        
+
         Args:
             start_date: Filter SRVs from this date onwards (Performance View)
         """
@@ -29,7 +29,7 @@ class AnalyticsService:
         if start_date:
             query += " AND s.srv_date >= ?"
             params.append(start_date)
-            
+
         query += """
             GROUP BY material
             HAVING SUM(si.rcd_qty) > 0
@@ -37,16 +37,10 @@ class AnalyticsService:
             LIMIT ?
         """
         params.append(limit)
-        
+
         rows = db.execute(query, tuple(params)).fetchall()
         return [
-            {
-                "material": row[0],
-                "total_received": row[1],
-                "total_rejected": row[2],
-                "example_po_number": row[3],
-                "rejection_rate": row[4]
-            }
+            {"material": row[0], "total_received": row[1], "total_rejected": row[2], "example_po_number": row[3], "rejection_rate": row[4]}
             for row in rows
         ]
 
@@ -69,7 +63,7 @@ class AnalyticsService:
         if start_date:
             query += " AND po.po_date >= ?"
             params.append(start_date)
-            
+
         result = db.execute(query, tuple(params)).fetchone()
         return round(float(result[0]), 2) if result and result[0] is not None else 0.0
 
@@ -79,7 +73,7 @@ class AnalyticsService:
         # Default to 6 months if no start_date provided
         if not start_date:
             start_date = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
-            
+
         query = """
             SELECT 
                 strftime('%Y-%m', po.po_date) as month,
@@ -92,19 +86,12 @@ class AnalyticsService:
             ORDER BY month ASC
         """
         rows = db.execute(query, (start_date,)).fetchall()
-        return [
-            {
-                "month": row[0],
-                "ordered_qty": row[1],
-                "accepted_qty": row[2]
-            }
-            for row in rows
-        ]
+        return [{"month": row[0], "ordered_qty": row[1], "accepted_qty": row[2]} for row in rows]
 
     @staticmethod
     def get_supply_health_score(db: sqlite3.Connection, start_date: str | None = None):
         """Weight-based health score (higher rejection lowers score)
-        
+
         Filters by PO Date to match quantity lifecycle in dashboard.
         """
         query = """
@@ -120,12 +107,12 @@ class AnalyticsService:
         if start_date:
             query += " AND po.po_date >= ?"
             params.append(start_date)
-            
+
         row = db.execute(query, tuple(params)).fetchone()
-            
+
         if not row or row[0] == 0:
             return 100.0
-        
+
         rejection_rate = (row[1] / row[0]) * 100
-        health_score = max(0, 100 - (rejection_rate * 5)) # Aggressive penalty for rejections
+        health_score = max(0, 100 - (rejection_rate * 5))  # Aggressive penalty for rejections
         return round(health_score, 1)

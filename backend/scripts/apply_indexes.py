@@ -14,7 +14,7 @@ def apply_indexes():
     # Parse the real path from the sqlalchemy URL
     db_path = settings.DATABASE_URL.replace("sqlite:///", "")
     print(f"Connecting to database at {db_path}")
-    
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -31,7 +31,7 @@ def apply_indexes():
         "CREATE INDEX IF NOT EXISTS idx_dc_created_at ON delivery_challans(created_at);",
         "CREATE INDEX IF NOT EXISTS idx_srv_created_at ON srv_items(created_at);",
         "CREATE INDEX IF NOT EXISTS idx_po_items_po_number ON purchase_order_items(po_number);",
-        "CREATE INDEX IF NOT EXISTS idx_dc_items_dc_number ON delivery_challan_items(dc_number);"
+        "CREATE INDEX IF NOT EXISTS idx_dc_items_dc_number ON delivery_challan_items(dc_number);",
     ]
 
     print("Applying indexes...")
@@ -45,6 +45,7 @@ def apply_indexes():
     conn.commit()
     conn.close()
     print("Indexes applied successfully.")
+
 
 if __name__ == "__main__":
     apply_indexes()

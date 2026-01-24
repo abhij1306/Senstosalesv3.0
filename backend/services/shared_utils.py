@@ -11,7 +11,6 @@ def clean(text):
 # Removed normalize_date - use backend.core.date_utils.normalize_date
 
 
-
 def has_value(val):
     if val is None:
         return False

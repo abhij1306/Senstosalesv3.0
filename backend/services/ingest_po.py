@@ -39,7 +39,7 @@ class POIngestionService:
         if not po_items:
             raise ValueError("Scraper returned zero items for this PO. Aborting ingestion.")
 
-        po_number = str(po_header.get('PURCHASE ORDER', '')).strip()
+        po_number = str(po_header.get("PURCHASE ORDER", "")).strip()
         logger.debug(f"Starting PO ingestion: header fields={len(po_header)}, items={len(po_items)}, PO={po_number}")
         logger.debug(f"PO items to process: {[item.get('PO ITM') for item in po_items]}")
 
@@ -69,7 +69,7 @@ class POIngestionService:
 
             if existing:
                 warnings.append(f"⚠️ PO {po_number} already exists (Amendment {existing['amend_no']}). Updating...")
-            
+
             status_type = "OVERWRITE" if existing else "NEW"
 
             # 4. Prepare Header Data
@@ -121,7 +121,7 @@ class POIngestionService:
             # Column list for insertion (must match keys and placeholders)
             columns = ", ".join(header_data.keys())
             placeholders = ", ".join(["?"] * len(header_data))
-            
+
             # Update part for ON CONFLICT
             update_stmt = ", ".join([f"{col}=excluded.{col}" for col in header_data.keys() if col != "po_number"])
 
@@ -179,7 +179,7 @@ class POIngestionService:
                 # Column list for insertion
                 item_cols = ", ".join(item_data.keys())
                 item_placeholders = ", ".join(["?"] * len(item_data))
-                
+
                 # Update part for ON CONFLICT
                 item_update_stmt = ", ".join([f"{col}=excluded.{col}" for col in item_data.keys() if col not in ["po_number", "po_item_no", "id"]])
 
@@ -219,7 +219,6 @@ class POIngestionService:
                 for dely in deliveries:
                     lot_no = to_int(dely.get("LOT NO") or 1)
 
-
                     db.execute(
                         """
                         INSERT INTO purchase_order_deliveries (
@@ -233,7 +232,7 @@ class POIngestionService:
                             lot_no,
                             to_qty(dely.get("DELY QTY") or ord_qty),
                             normalize_date(dely.get("DELY DATE")),
-                            normalize_date(dely.get("ENTRY ALLOW DATE")), # No default
+                            normalize_date(dely.get("ENTRY ALLOW DATE")),  # No default
                             to_int(dely.get("DEST CODE")),
                             dely.get("REMARKS"),
                             dely.get("manual_override_qty") or existing_tracking.get(lot_no, {}).get("manual", 0),

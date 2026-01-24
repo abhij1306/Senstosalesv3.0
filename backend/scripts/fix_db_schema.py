@@ -1,8 +1,8 @@
-
 import sqlite3
 from pathlib import Path
 
 db_path = Path(r"c:\Users\abhij\.gemini\antigravity\scratch\SenstoSales\backend\db\business.db")
+
 
 def fix_db():
     if not db_path.exists():
@@ -20,7 +20,7 @@ def fix_db():
         # Check if our_ref column exists
         cursor = conn.execute("PRAGMA table_info(purchase_orders)")
         columns = [row[1] for row in cursor.fetchall()]
-        
+
         if "our_ref" not in columns:
             print("Adding our_ref column to purchase_orders...")
             conn.execute("ALTER TABLE purchase_orders ADD COLUMN our_ref TEXT")
@@ -28,11 +28,12 @@ def fix_db():
             print("Column added successfully.")
         else:
             print("Column our_ref already exists.")
-            
+
     except Exception as e:
         print(f"Error fixing database: {e}")
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     fix_db()

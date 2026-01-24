@@ -13,21 +13,21 @@ DATABASE_DIR = PROJECT_ROOT / "db"
 # PERSISTENCE LOGIC FOR FROZEN (EXE) BUILDS
 # -----------------------------------------------------------------------------
 
-is_frozen = getattr(sys, 'frozen', False)
+is_frozen = getattr(sys, "frozen", False)
 
-if is_frozen and hasattr(sys, '_MEIPASS'):
+if is_frozen and hasattr(sys, "_MEIPASS"):
     # We are running inside the EXE (PyInstaller)
     # The 'bundled' files (including seed DB) are in sys._MEIPASS
     internal_bundle_dir = Path(sys._MEIPASS)
-    
+
     # We want the DB to live next to the EXE file so it persists
     exe_dir = Path(sys.executable).parent
     persistent_db_dir = exe_dir / "db"
     persistent_db_path = persistent_db_dir / "business.db"
-    
+
     # Ensure external db folder exists
     persistent_db_dir.mkdir(exist_ok=True)
-    
+
     # If external DB doesn't exist yet, copy the SEED DB from inside the bundle
     if not persistent_db_path.exists():
         internal_seed_db = internal_bundle_dir / "db" / "business.db"
@@ -35,12 +35,12 @@ if is_frozen and hasattr(sys, '_MEIPASS'):
             # Use print for boot messages as logging may not be configured yet
             print(f"[BOOT] Initializing persistent database at: {persistent_db_path}", file=sys.stderr)
             shutil.copy2(internal_seed_db, persistent_db_path)
-            # IMPORTANT: Ensure the copied file is writable! 
+            # IMPORTANT: Ensure the copied file is writable!
             # PyInstaller often extracts files as Read-Only.
             os.chmod(persistent_db_path, 0o666)
         else:
             print("[BOOT] WARNING: No internal seed DB found to copy!", file=sys.stderr)
-            
+
     DATABASE_PATH = Path(os.environ.get("DATABASE_PATH", persistent_db_path))
 
 else:
@@ -72,10 +72,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = os.environ.get("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
 
     # CORS Configuration
-    CORS_ALLOW_ORIGINS: str = os.environ.get(
-        "CORS_ALLOW_ORIGINS",
-        "*"
-    )
+    CORS_ALLOW_ORIGINS: str = os.environ.get("CORS_ALLOW_ORIGINS", "*")
     CORS_ALLOW_ALL_ORIGINS: bool = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "true").lower() == "true"
 
     model_config = SettingsConfigDict(
