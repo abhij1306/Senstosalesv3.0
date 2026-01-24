@@ -2,7 +2,7 @@
 Reconciliation Service V2 - Optimized
 Enforces:
 1. Centralized status logic (uses status_service)
-2. Status updates only (quantities handled by triggers)
+2. Quantity consistency (Application Layer is Source of Truth)
 """
 
 import logging
@@ -24,71 +24,18 @@ class ReconciliationServiceV2:
         """
         Optimized PO Status Update
         
-        NOTE: Quantity updates are handled by database triggers:
-        - trg_dc_items_dispatch_sync -> updates dsp_qty
-        - trg_srv_items_receipt_sync -> updates rcd_qty
+        CRITICAL: This service acts as the Source of Truth for PO quantities.
+        It explicitly synchronizes quantities from SRV and DC tables before
+        calculating status to ensure data consistency.
         """
         logger.info(f"Syncing PO status for {po_number}")
         
         try:
-            # 1. Fetch current quantities from PO Items (updated by triggers)
-            # Use dictionary cursor for easier access if needed, or just row
-            original_row_factory = db.row_factory
-            db.row_factory = sqlite3.Row
+            # -----------------------------------------------------------------
+            # 1. Synchronize Quantities (Update Source of Truth)
+            # -----------------------------------------------------------------
             
-            items = db.execute(
-                """
-                SELECT id, ord_qty, dsp_qty, rcd_qty, rej_qty 
-                FROM purchase_order_items 
-                WHERE po_number = ?
-                """,
-                (po_number,)
-            ).fetchall()
-            
-            db.row_factory = original_row_factory
-            
-            if not items:
-                return
-
-            item_status_updates = []
-            
-            total_ordered = 0.0
-            total_delivered = 0.0
-            total_received = 0.0
-            total_rejected = 0.0
-            
-            # 2. Calculate Item Statuses
-            for item in items:
-                ord_qty = item['ord_qty'] or 0
-                dsp_qty = item['dsp_qty'] or 0
-                rcd_qty = item['rcd_qty'] or 0
-                rej_qty = item['rej_qty'] or 0
-                
-                # Aggregate totals
-                total_ordered += ord_qty
-                total_delivered += dsp_qty
-                total_received += rcd_qty
-                total_rejected += rej_qty
-
-                # Determine item status
-                new_status = calculate_entity_status(ord_qty, dsp_qty, rcd_qty)
-                item_status_updates.append((new_status, item['id']))
-
-            # 3. Batch Update Item Statuses
-            db.executemany(
-                "UPDATE purchase_order_items SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                item_status_updates
-            )
-
-            # 3.5 Sync lot table (purchase_order_deliveries) dsp_qty and rcd_qty
-            # Both need to be accurate for the lot-level locking in the UI
-            
-            # Sync rcd_qty (already there, just ensuring it's robust)
-            # Sync rcd_qty managed by triggers (trg_srv_items_receipt_sync) and ingest_po
-            # Removed aggressive overwrite to preserve PO-uploaded quantities
-
-
-            # 3.1 Item-level received quantities sync
+            # 1.1 Item-level received quantities sync
             # Source of Truth: Sum of all matching srv_items
             db.execute(
                 """
@@ -110,7 +57,7 @@ class ReconciliationServiceV2:
                 (po_number,)
             )
 
-            # 3.2 Ensure lot tables are clean (Lots only track schedules, not activity)
+            # 1.2 Ensure lot tables are clean (Lots only track schedules, not activity)
             db.execute(
                 """
                 UPDATE purchase_order_deliveries
@@ -120,7 +67,7 @@ class ReconciliationServiceV2:
                 (po_number,)
             )
 
-            # 3.3 Update Item Dispatch (dsp_qty) from DC items
+            # 1.3 Update Item Dispatch (dsp_qty) from DC items
             # CRITICAL: If no DCs exist for an item, we PRESERVE the current dsp_qty 
             # to support manual overrides from the PO Edit page.
             db.execute(
@@ -141,7 +88,7 @@ class ReconciliationServiceV2:
                 (po_number,)
             )
 
-            # 3.4 Update pending_qty (Source of Truth: ord_qty - dsp_qty)
+            # 1.4 Update pending_qty (Source of Truth: ord_qty - dsp_qty)
             db.execute(
                 """
                 UPDATE purchase_order_items
@@ -151,7 +98,51 @@ class ReconciliationServiceV2:
                 (po_number,)
             )
 
+            # -----------------------------------------------------------------
+            # 2. Calculate Item Statuses (Using Fresh Quantities)
+            # -----------------------------------------------------------------
+
+            # Fetch current quantities from PO Items (now updated)
+            original_row_factory = db.row_factory
+            db.row_factory = sqlite3.Row
+
+            items = db.execute(
+                """
+                SELECT id, ord_qty, dsp_qty, rcd_qty, rej_qty
+                FROM purchase_order_items
+                WHERE po_number = ?
+                """,
+                (po_number,)
+            ).fetchall()
+
+            db.row_factory = original_row_factory
+
+            if not items:
+                return
+
+            item_status_updates = []
+
+            for item in items:
+                ord_qty = item['ord_qty'] or 0
+                dsp_qty = item['dsp_qty'] or 0
+                rcd_qty = item['rcd_qty'] or 0
+
+                # Determine item status
+                new_status = calculate_entity_status(ord_qty, dsp_qty, rcd_qty)
+                item_status_updates.append((new_status, item['id']))
+
+            # -----------------------------------------------------------------
+            # 3. Batch Update Item Statuses
+            # -----------------------------------------------------------------
+            db.executemany(
+                "UPDATE purchase_order_items SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                item_status_updates
+            )
+
+            # -----------------------------------------------------------------
             # 4. Determine PO Level Status
+            # -----------------------------------------------------------------
+
             # Re-fetch aggregated totals for accurate status
             totals = db.execute(
                 """
