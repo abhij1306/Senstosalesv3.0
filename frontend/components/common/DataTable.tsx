@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Pagination } from "./Pagination";
-import { Accounting, Mono, Tiny, Caption1 } from "./Typography";
+import { Accounting, Mono, Caption1, Tiny } from "./Typography";
 import { Input } from "./Input";
 
 /**
@@ -256,10 +256,53 @@ export const DataTable = React.memo(<T extends Record<string, any>>({
 
     if (showInitialLoading) {
         return (
-            <div className="w-full flex justify-center py-20 bg-surface-sunken/50 rounded-xl border border-dashed border-border-default">
-                <div className="flex flex-col items-center gap-2">
-                    <div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" />
-                    <Tiny className="text-text-tertiary uppercase tracking-wider">Loading Data...</Tiny>
+            <div className={cn("flex flex-col w-full bg-transparent relative", className)}>
+                {!hideHeader && (
+                    <div className="sticky top-0 z-30 bg-surface shadow-none border-none">
+                        <div className="flex border-none">
+                            {effectiveColumns.map((column, idx) => (
+                                <div
+                                    key={idx}
+                                    className={cn(
+                                        "px-3 first:pl-8 last:pr-8 flex items-center h-10 bg-surface",
+                                        column.align === 'center' && 'justify-center',
+                                        column.align === 'right' && 'justify-end'
+                                    )}
+                                    style={{ width: column.width || `${100 / effectiveColumns.length}%` }}
+                                >
+                                    <div className="h-3 w-20 bg-surface-secondary/50 rounded animate-pulse" />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                <div className="w-full">
+                    {Array.from({ length: 5 }).map((_, rowIndex) => (
+                        <div
+                            key={rowIndex}
+                            className="flex items-center border-b border-border-subtle/30 last:border-none"
+                            style={{ height: actualRowHeight }}
+                        >
+                            {effectiveColumns.map((column, colIndex) => (
+                                <div
+                                    key={colIndex}
+                                    className={cn(
+                                        "px-3 first:pl-8 last:pr-8",
+                                        column.align === 'center' && 'flex justify-center',
+                                        column.align === 'right' && 'flex justify-end'
+                                    )}
+                                    style={{ width: column.width || `${100 / effectiveColumns.length}%` }}
+                                >
+                                    <div
+                                        className={cn(
+                                            "h-4 rounded bg-surface-secondary/40 animate-pulse",
+                                            column.key === "__selection__" ? "w-4 rounded-md" : "w-full max-w-[80%]"
+                                        )}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    ))}
                 </div>
             </div>
         );

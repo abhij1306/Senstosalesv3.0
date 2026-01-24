@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { cn } from '@/lib/utils';
-import { Caption1, Input } from '@/components/common';
+import { Input } from '@/components/common';
 import { Flex } from '@/components/common';
 
 interface FieldGroupProps {
@@ -15,6 +15,7 @@ interface FieldGroupProps {
     tooltip?: string;
     error?: boolean;
     className?: string;
+    id?: string;
 }
 
 export const FieldGroup = React.memo(({
@@ -28,15 +29,25 @@ export const FieldGroup = React.memo(({
     type = "text",
     tooltip,
     error,
-    className
+    className,
+    id
 }: FieldGroupProps) => {
+    const generatedId = useId();
+    const inputId = id || generatedId;
+
     return (
         <div className={cn("space-y-1.5 min-w-0 group", className)}>
             <Flex align="center" justify="between" className="px-1">
                 <div className="flex items-center gap-2">
-                    <Caption1 className={cn(error && "text-status-error font-medium transition-colors")}>
+                    <label
+                        htmlFor={inputId}
+                        className={cn(
+                            "font-sans text-xs uppercase tracking-[0.1em] text-text-tertiary font-normal antialiased cursor-pointer",
+                            error && "text-status-error font-medium transition-colors"
+                        )}
+                    >
                         {label}
-                    </Caption1>
+                    </label>
                     {tooltip && (
                         <div className="text-text-quaternary hover:text-text-tertiary cursor-help transition-colors" title={tooltip}>
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -60,6 +71,7 @@ export const FieldGroup = React.memo(({
                 )}
                 {isTextArea ? (
                     <textarea
+                        id={inputId}
                         value={value}
                         onChange={(e) => onChange?.(e.target.value)}
                         disabled={disabled}
@@ -73,6 +85,7 @@ export const FieldGroup = React.memo(({
                     />
                 ) : (
                     <Input
+                        id={inputId}
                         value={value}
                         type={type}
                         onChange={(e) => onChange?.(e.target.value)}
