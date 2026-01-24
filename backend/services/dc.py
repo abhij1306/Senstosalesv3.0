@@ -85,7 +85,7 @@ def create_dc(dc: DCCreate, items: list[dict], db: sqlite3.Connection) -> Servic
         # 0. GC Number/Date Defaults & Validation
         if not dc.gc_number or dc.gc_number.strip() == "":
             dc.gc_number = final_dc_number
-        
+
         if not dc.gc_date or dc.gc_date.strip() == "":
             dc.gc_date = dc.dc_date  # Default GC date to DC date
 
@@ -101,7 +101,7 @@ def create_dc(dc: DCCreate, items: list[dict], db: sqlite3.Connection) -> Servic
         ).fetchone()
 
         if existing_gc:
-             raise ConflictError(
+            raise ConflictError(
                 f"GC number {dc.gc_number} already exists in Financial Year {fy}.",
                 details={"gc_number": dc.gc_number, "financial_year": fy},
             )
@@ -160,7 +160,7 @@ def create_dc(dc: DCCreate, items: list[dict], db: sqlite3.Connection) -> Servic
         for item in items:
             po_item_id = item["po_item_id"]
             total_dsp_qty = to_qty(item["dsp_qty"])
-            
+
             # AT ITEM LEVEL: We don't care about specific target_lot anymore
             # Record against a single entry (lot_no=1) for consistency with schema if needed
             item_id = str(uuid.uuid4())
@@ -210,10 +210,7 @@ def create_dc(dc: DCCreate, items: list[dict], db: sqlite3.Connection) -> Servic
 
         # SYNC: Update PO's our_ref if DC provides one
         if dc.our_ref and dc.po_number:
-            db.execute(
-                "UPDATE purchase_orders SET our_ref = ? WHERE po_number = ? AND (our_ref IS NULL OR our_ref = '')",
-                (dc.our_ref, dc.po_number)
-            )
+            db.execute("UPDATE purchase_orders SET our_ref = ? WHERE po_number = ? AND (our_ref IS NULL OR our_ref = '')", (dc.our_ref, dc.po_number))
 
         # ATOMIC SYNC: Update PO status after DC creation
         from backend.services.reconciliation_v2 import ReconciliationService
@@ -271,19 +268,21 @@ def update_dc(dc_number: str, dc: DCCreate, items: list[dict], db: sqlite3.Conne
         # Validate
         validate_dc_header(dc, db)
         validate_dc_items(items, db, exclude_dc=dc_number)
-        
+
         # 0. GC Number/Date Defaults & Validation
         if not dc.gc_number or dc.gc_number.strip() == "":
-            dc.gc_number = dc_number # Default to DC number
-        
+            dc.gc_number = dc_number  # Default to DC number
+
         if not dc.gc_date or dc.gc_date.strip() == "":
-             from datetime import date
-             dc.gc_date = date.today().strftime("%d-%m-%Y")
+            from datetime import date
+
+            dc.gc_date = date.today().strftime("%d-%m-%Y")
 
         # Check for duplicate GC number (excluding current DC)
         # We need to know FY to check duplicates, fetch current record for date or use new date
         # Assuming duplicate check relies on dc_date range of the updated record
         from backend.core.utils import get_financial_year
+
         fy = get_financial_year(dc.dc_date)
         year_start = fy.split("-")[0]
         full_year_start = f"{year_start}-04-01"
@@ -301,7 +300,7 @@ def update_dc(dc_number: str, dc: DCCreate, items: list[dict], db: sqlite3.Conne
         ).fetchone()
 
         if existing_gc:
-             raise ConflictError(
+            raise ConflictError(
                 f"GC number {dc.gc_number} already exists in Financial Year {fy}.",
                 details={"gc_number": dc.gc_number, "financial_year": fy},
             )
@@ -380,9 +379,14 @@ def update_dc(dc_number: str, dc: DCCreate, items: list[dict], db: sqlite3.Conne
                 )
                 """,
                 (
-                    item_id, dc_number, po_item_id, total_dsp_qty,
-                    item.get("hsn_code"), item.get("hsn_rate"),
-                    po_item_id, total_dsp_qty,
+                    item_id,
+                    dc_number,
+                    po_item_id,
+                    total_dsp_qty,
+                    item.get("hsn_code"),
+                    item.get("hsn_rate"),
+                    po_item_id,
+                    total_dsp_qty,
                 ),
             )
 
@@ -419,7 +423,7 @@ def delete_dc(dc_number: str, db: sqlite3.Connection) -> ServiceResult[dict]:
     """
     Delete a Delivery Challan
     Rolls back quantity reconciliation by removing the records
-    
+
     INVARIANTS:
     - DC cannot be deleted if linked to an Invoice
     - DC cannot be deleted if SRV items reference it (received goods)
@@ -436,14 +440,17 @@ def delete_dc(dc_number: str, db: sqlite3.Connection) -> ServiceResult[dict]:
                     "invariant": "DC-2",
                 },
             )
-        
+
         # INVARIANT: DC-3 - DC cannot be deleted if SRV items reference it
-        srv_row = db.execute("""
+        srv_row = db.execute(
+            """
             SELECT srv_number FROM srv_items 
             WHERE challan_no = ? 
             LIMIT 1
-        """, (dc_number,)).fetchone()
-        
+        """,
+            (dc_number,),
+        ).fetchone()
+
         if srv_row:
             raise ConflictError(
                 f"Cannot delete DC {dc_number} - has received goods in SRV {srv_row['srv_number']}",
@@ -462,7 +469,7 @@ def delete_dc(dc_number: str, db: sqlite3.Connection) -> ServiceResult[dict]:
         # Get PO number before deletion for reconciliation
         po_row = db.execute("SELECT po_number FROM delivery_challans WHERE dc_number = ?", (dc_number,)).fetchone()
         po_number = po_row[0] if po_row else None
-        
+
         from backend.services.reconciliation_v2 import ReconciliationService
 
         # Delete DC Header (Items will be deleted via ON DELETE CASCADE or manually if not supported)

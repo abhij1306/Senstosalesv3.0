@@ -2,6 +2,7 @@
 Deviations API Router
 Handles listing and resolving deviations.
 """
+
 import sqlite3
 from typing import Optional
 
@@ -13,13 +14,10 @@ from backend.services.deviation_service import DeviationService
 
 router = APIRouter()
 
+
 @router.get("/")
 def get_deviations(
-    include_resolved: bool = False,
-    limit: int = 50,
-    offset: int = 0,
-    po_number: Optional[str] = None,
-    db: sqlite3.Connection = Depends(get_db)
+    include_resolved: bool = False, limit: int = 50, offset: int = 0, po_number: Optional[str] = None, db: sqlite3.Connection = Depends(get_db)
 ):
     """List detected deviations."""
     # If po_number is provided, we filter by it
@@ -48,26 +46,18 @@ def get_deviations(
         LIMIT ? OFFSET ?
     """
     rows = db.execute(query, params + [limit, offset]).fetchall()
-    
+
     items = [dict(row) for row in rows]
-    
-    return PaginatedResponse(
-        items=items,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=(offset // limit) + 1,
-            limit=limit
-        )
-    )
+
+    return PaginatedResponse(items=items, metadata=PaginatedMetadata(total_count=total_count, page=(offset // limit) + 1, limit=limit))
+
 
 @router.post("/{deviation_id}/resolve")
-def resolve_deviation(
-    deviation_id: int,
-    db: sqlite3.Connection = Depends(get_db)
-):
+def resolve_deviation(deviation_id: int, db: sqlite3.Connection = Depends(get_db)):
     """Mark a deviation as resolved."""
     success = DeviationService.resolve_deviation(db, deviation_id)
     return {"success": success}
+
 
 @router.get("/stats")
 def get_deviation_stats(db: sqlite3.Connection = Depends(get_db)):

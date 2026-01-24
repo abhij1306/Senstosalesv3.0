@@ -18,7 +18,6 @@ from backend.services.status_service import calculate_entity_status
 router = APIRouter()
 
 
-
 def _fetch_recent_activity(db: sqlite3.Connection, limit: int) -> list[dict[str, Any]]:
     """Shared logic to fetch recent mixed activity"""
     activities = []
@@ -149,17 +148,18 @@ def _fetch_recent_activity(db: sqlite3.Connection, limit: int) -> list[dict[str,
 @router.get("/summary", response_model=DashboardSummary)
 def get_dashboard_summary(time_range: str = "month", db: sqlite3.Connection = Depends(get_db)):
     """Get dashboard summary statistics
-    
+
     Args:
         time_range: 'month' (default), '30d', 'all'
     """
     try:
         now = datetime.now()
         start_date = None
-        
+
         # Calculate Start Date based on Range
         if time_range == "30d":
             from datetime import timedelta
+
             start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
         elif time_range == "month":
             start_date = now.replace(day=1).strftime("%Y-%m-%d")
@@ -172,7 +172,7 @@ def get_dashboard_summary(time_range: str = "month", db: sqlite3.Connection = De
         if start_date:
             sales_query += " WHERE invoice_date >= ?"
             sales_params = (start_date,)
-            
+
         sales_row = db.execute(sales_query, sales_params).fetchone()
         total_sales = sales_row[0] if sales_row and sales_row[0] else 0.0
 
@@ -209,28 +209,28 @@ def get_dashboard_summary(time_range: str = "month", db: sqlite3.Connection = De
         if start_date:
             po_val_query += " WHERE po_date >= ?"
             po_val_params = (start_date,)
-            
+
         value_row = db.execute(po_val_query, po_val_params).fetchone()
         total_po_value = value_row[0] if value_row and value_row[0] else 0.0
 
         # 6. Overall Quantity Stats (Filtered by Originating PO Date / Lifecycle)
         # Reflects "Efficiency of orders placed in this period" or "Activity in this period"
-        # User requested "doc wise". 
-        
+        # User requested "doc wise".
+
         # Total Ordered: Items from POs dated in range
         ord_query = "SELECT SUM(poi.ord_qty) FROM purchase_order_items poi JOIN purchase_orders po ON poi.po_number = po.po_number"
         dsp_query = "SELECT SUM(dci.dsp_qty) FROM delivery_challan_items dci JOIN purchase_order_items poi ON dci.po_item_id = poi.id JOIN purchase_orders po ON poi.po_number = po.po_number"
-        # For Receipt/Rejection, we link back to PO to keep the "Supply Chain View" consistent? 
-        # Or filter by SRV Date? 
+        # For Receipt/Rejection, we link back to PO to keep the "Supply Chain View" consistent?
+        # Or filter by SRV Date?
         # User: "PO value linked to actual PO date and so on"
-        # If I want "Total Received", usually people mean "Received in this period". 
+        # If I want "Total Received", usually people mean "Received in this period".
         # But if we want "Fulfillment of POs in this period", we filter by PO Date.
         # Given "Supply Chain Health" is its own metric (receipt quality), let's keep Quantity stats as "Lifecycle of POs in this period" to match "Filtered PO Value".
-        
+
         qtys_params = ()
         if start_date:
             ord_query += " WHERE po.po_date >= ?"
-            dsp_query += " WHERE po.po_date >= ?" 
+            dsp_query += " WHERE po.po_date >= ?"
             # For SRVs, we join back to PO for lifecycle view
             rcd_rej_query = """
                 SELECT SUM(si.rcd_qty), SUM(si.rej_qty) 
@@ -243,10 +243,9 @@ def get_dashboard_summary(time_range: str = "month", db: sqlite3.Connection = De
         else:
             rcd_rej_query = "SELECT SUM(rcd_qty), SUM(rej_qty) FROM srv_items"
 
-
         total_ord_qty = db.execute(ord_query, qtys_params).fetchone()[0] or 0.0
         total_dsp_qty = db.execute(dsp_query, qtys_params).fetchone()[0] or 0.0
-        
+
         rcd_rej_row = db.execute(rcd_rej_query, qtys_params).fetchone()
         total_rcd_qty = rcd_rej_row[0] if rcd_rej_row and rcd_rej_row[0] else 0.0
         total_rej_qty = rcd_rej_row[1] if rcd_rej_row and rcd_rej_row[1] else 0.0
@@ -259,32 +258,29 @@ def get_dashboard_summary(time_range: str = "month", db: sqlite3.Connection = De
         # Momentum Trend: Linked to Time Range
         from datetime import timedelta
 
-        
         return {
             "total_sales_month": total_sales,
-            "sales_growth": 0.0, # Placeholder as trend logic removed/simplified
+            "sales_growth": 0.0,  # Placeholder as trend logic removed/simplified
             "pending_pos": active_pos_count,
             "new_pos_today": new_pos_today,
             "active_challans": active_challans,
-            "active_challans_growth": "0%", # Placeholder
+            "active_challans_growth": "0%",  # Placeholder
             "total_po_value": total_po_value,
-            "po_value_growth": 0.0, # Placeholder
-            
+            "po_value_growth": 0.0,  # Placeholder
             "total_ord_qty": total_ord_qty,
             "total_dsp_qty": total_dsp_qty,
             "total_rcd_qty": total_rcd_qty,
             "total_rej_qty": total_rej_qty,
-
             "avg_lead_time": AnalyticsService.get_lead_time_analysis(db, start_date),
-            "supply_health_score": AnalyticsService.get_supply_health_score(db, start_date), # Pass Filter
+            "supply_health_score": AnalyticsService.get_supply_health_score(db, start_date),  # Pass Filter
             "rejection_profile": AnalyticsService.get_rejection_profile(db, limit=10, start_date=start_date),
             "fulfillment_trends": AnalyticsService.get_fulfillment_trends(db, start_date=start_date),
-            
             "recent_activity": recent_activity,
-            "performance_data": [] # Explicitly empty as section removed
+            "performance_data": [],  # Explicitly empty as section removed
         }
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         raise internal_error(str(e), e)
 

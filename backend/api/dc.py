@@ -60,73 +60,67 @@ def get_dispatchable_items(po_number: str, db: sqlite3.Connection = Depends(get_
             WHERE poi.po_number = ?
             ORDER BY poi.po_item_no
         """
-        
+
         rows = db.execute(query, (po_number,)).fetchall()
-        
+
         # Filter to only items with remaining balance (computed in Python)
         items = []
         for row in rows:
             ordered = row["ord_qty"] or 0
             dispatched = row["dsp_qty"] or 0
             received = row["rcd_qty"] or 0
-            
+
             # Balance for DC creation: how much is left to ship?
             balance = max(0, ordered - dispatched)
-            
+
             if balance > 0:
-                items.append({
-                    "id": str(row['po_item_id']), # Use PO Item ID as unique key
-                    "po_item_id": row["po_item_id"],
-                    "po_item_no": row["po_item_no"],
-                    "lot_no": None, # Consolidated View
-                    "material_code": row["material_code"] or "",
-                    "description": row["description"] or "",
-                    "drg_no": row["drg_no"] or "",
-                    "mtrl_cat": row["mtrl_cat"],
-                    "unit": row["unit"] or "NOS",
-                    "po_rate": row["po_rate"] or 0,
-                    "ord_qty": ordered,
-                    "dsp_qty": dispatched,
-                    "rcd_qty": received,
-                    "balance_quantity": balance,
-                })
-        
-        
+                items.append(
+                    {
+                        "id": str(row["po_item_id"]),  # Use PO Item ID as unique key
+                        "po_item_id": row["po_item_id"],
+                        "po_item_no": row["po_item_no"],
+                        "lot_no": None,  # Consolidated View
+                        "material_code": row["material_code"] or "",
+                        "description": row["description"] or "",
+                        "drg_no": row["drg_no"] or "",
+                        "mtrl_cat": row["mtrl_cat"],
+                        "unit": row["unit"] or "NOS",
+                        "po_rate": row["po_rate"] or 0,
+                        "ord_qty": ordered,
+                        "dsp_qty": dispatched,
+                        "rcd_qty": received,
+                        "balance_quantity": balance,
+                    }
+                )
+
         # Fetch PO header for context (including DVN = department_no and our_ref)
-        header = db.execute("""
+        header = db.execute(
+            """
             SELECT po_number, po_date, amend_no, department_no, our_ref, supplier_name, supplier_gstin, supplier_phone
             FROM purchase_orders WHERE po_number = ?
-        """, (po_number,)).fetchone()
-        
+        """,
+            (po_number,),
+        ).fetchone()
+
         header_dict = dict(header) if header else None
         # Add empty consignee fields as defaults
         if header_dict:
-             # P1 FIX: Fetch Default Consignee from Settings (or Fallback)
+            # P1 FIX: Fetch Default Consignee from Settings (or Fallback)
             try:
+                setting_row = db.execute("SELECT value FROM settings WHERE key = 'default_consignee_name'").fetchone()
                 default_consignee = setting_row["value"] if setting_row else "The Purchase Manager"
                 header_dict["consignee_name"] = default_consignee
             except Exception:
                 header_dict["consignee_name"] = "The Purchase Manager"
-            
+
             # Default Address if empty
             if not header_dict.get("consignee_address"):
-                 header_dict["consignee_address"] = "Partner Engineering PSU\nLOCATION"
-        
-        return {
-            "po_number": po_number,
-            "header": header_dict,
-            "items": items,
-            "total_items": len(items)
-        }
+                header_dict["consignee_address"] = "Partner Engineering PSU\nLOCATION"
+
+        return {"po_number": po_number, "header": header_dict, "items": items, "total_items": len(items)}
     except Exception as e:
         logger.error(f"dispatchable-items error: {e}", exc_info=True)
         raise
-
-
-
-
-
-
 
 
 @router.get("/stats", response_model=DCStats)
@@ -172,10 +166,10 @@ def list_dcs(
     sort_by: str = "created_at",
     order: str = "desc",
     search: str | None = None,
-    db: sqlite3.Connection = Depends(get_db)
+    db: sqlite3.Connection = Depends(get_db),
 ):
     """List all Delivery Challans (Paginated)"""
-    
+
     # Map frontend keys to DB columns
     sort_map = {
         "dc_number": "dc.dc_number",
@@ -183,9 +177,9 @@ def list_dcs(
         "po_number": "dc.po_number",
         "consignee_name": "dc.consignee_name",
         "created_at": "dc.created_at",
-        "total_value": "total_value"
+        "total_value": "total_value",
     }
-    
+
     db_sort_col = sort_map.get(sort_by, "dc.created_at")
     db_order = "DESC" if order.lower() == "desc" else "ASC"
 
@@ -197,18 +191,18 @@ def list_dcs(
         LEFT JOIN purchase_order_deliveries pod ON dci.po_item_id = pod.po_item_id AND dci.lot_no = pod.lot_no
         LEFT JOIN gst_invoices i ON dc.dc_number = i.dc_number
     """
-    
+
     where_clauses = []
     params = []
-    
+
     if po:
         where_clauses.append("dc.po_number = ?")
         params.append(po)
-    
+
     if search:
         where_clauses.append("(dc.dc_number LIKE ? OR dc.po_number LIKE ? OR dc.consignee_name LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-        
+
     where_stmt = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
 
     # Get total count
@@ -257,7 +251,7 @@ def list_dcs(
         ORDER BY {db_sort_col} {db_order}
         LIMIT ? OFFSET ?
     """
-    
+
     rows = db.execute(query, params + [limit, offset]).fetchall()
 
     results = []
@@ -283,18 +277,11 @@ def list_dcs(
                 total_dsp_qty=total_dispatched_this_dc,
                 total_pending_qty=total_pending,
                 total_rcd_qty=total_received_this_dc,
-                invoice_number=row["invoice_number"]
+                invoice_number=row["invoice_number"],
             )
         )
 
-    return PaginatedResponse(
-        items=results,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=(offset // limit) + 1,
-            limit=limit
-        )
-    )
+    return PaginatedResponse(items=results, metadata=PaginatedMetadata(total_count=total_count, page=(offset // limit) + 1, limit=limit))
 
 
 @router.get("/export-list")
@@ -303,25 +290,21 @@ def export_dcs_list(po: str | None = None, db: sqlite3.Connection = Depends(get_
     import csv
     import io
 
-
     # Reuse list logic to get data
     data = list_dcs(po, db)
 
-    # Define CSV columns matching UI: 
+    # Define CSV columns matching UI:
     # Record (DC#), Date, Contract (PO#), Consignee, Status, Value, Ord, Delivered, Pending, Received
-    
-    headers = [
-        "Record", "Date", "Contract", "Consignee", "Status", 
-        "Value", "Ord Qty", "Delivered Qty", "Pending Qty", "Received Qty"
-    ]
+
+    headers = ["Record", "Date", "Contract", "Consignee", "Status", "Value", "Ord Qty", "Delivered Qty", "Pending Qty", "Received Qty"]
 
     # Generate CSV in memory for saving/streaming
     output = io.StringIO()
     writer = csv.writer(output)
-    
+
     # Write BOM for Excel compatibility
-    output.write('\ufeff') 
-    
+    output.write("\ufeff")
+
     writer.writerow(headers)
 
     for dc in data:
@@ -335,19 +318,20 @@ def export_dcs_list(po: str | None = None, db: sqlite3.Connection = Depends(get_
             dc.total_ord_qty,
             dc.total_dsp_qty,
             dc.total_pending_qty,
-            dc.total_rcd_qty
+            dc.total_rcd_qty,
         ]
         writer.writerow(row)
-    
+
     # Convert to bytes for ExcelService
-    csv_bytes = io.BytesIO(output.getvalue().encode('utf-8'))
-    
+    csv_bytes = io.BytesIO(output.getvalue().encode("utf-8"))
+
     filename = f"DC_List_Export_{po or 'All'}.csv"
-    
+
     # Check User Preference
     save_path = None
     try:
         from backend.api.reports import get_save_path
+
         save_path = get_save_path(db, "challan_summary")
     except ImportError:
         # Fallback if circular import or other issue, though models are separate
@@ -355,9 +339,10 @@ def export_dcs_list(po: str | None = None, db: sqlite3.Connection = Depends(get_
         if row_pref and row_pref["challan_summary"]:
             save_path = row_pref["challan_summary"]
     except Exception as e:
-         logger.warning(f"Failed to fetch download prefs: {e}")
+        logger.warning(f"Failed to fetch download prefs: {e}")
 
     from backend.services.excel_service import ExcelService
+
     return ExcelService._save_or_stream(csv_bytes, filename, save_path)
 
 
@@ -379,7 +364,7 @@ def download_gc_excel(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
         logger.info(f"Downloading GC Excel: {dc_number}")
         # Get full detail logic
         dc_data = get_dc_detail(dc_number, db)
-        
+
         from backend.services.excel_service import ExcelService
 
         # User Preference for GC: 'gc' column
@@ -387,9 +372,9 @@ def download_gc_excel(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
         try:
             row = db.execute("SELECT gc FROM user_download_prefs ORDER BY id DESC LIMIT 1").fetchone()
             if row and row["gc"]:
-                 save_path = row["gc"]
+                save_path = row["gc"]
         except Exception as e:
-             logger.warning(f"Failed to fetch GC download prefs: {e}")
+            logger.warning(f"Failed to fetch GC download prefs: {e}")
 
         # Use GC generator
         logger.info(f"Downloading GC Excel: {dc_number}")
@@ -415,10 +400,10 @@ def download_dc_excel(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
         try:
             row = db.execute("SELECT challan FROM user_download_prefs ORDER BY id DESC LIMIT 1").fetchone()
             if row and row["challan"]:
-                 save_path = row["challan"]
-                 logger.info(f"Using configured download path for DC: {save_path}")
+                save_path = row["challan"]
+                logger.info(f"Using configured download path for DC: {save_path}")
         except Exception as e:
-             logger.warning(f"Failed to fetch download prefs: {e}")
+            logger.warning(f"Failed to fetch download prefs: {e}")
 
         # Use exact generator with optional save path
         return ExcelService.generate_exact_dc_excel(dc_data["header"], dc_data["items"], db, save_path=save_path)
@@ -471,6 +456,7 @@ def get_dc_detail(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
 
         # Check for existing invoice
         from backend.services.invoice import check_dc_already_invoiced
+
         header_dict["invoice_number"] = check_dc_already_invoiced(dc_number, db)
 
     except Exception as e:
@@ -538,7 +524,7 @@ def get_dc_detail(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
             # Use Item Level Quantities for display
             item_ord_qty = item_dict["ord_qty"] or 0
             item_total_dispatched = item_dict["item_total_dispatched"] or 0
-            
+
             # Lot level (kept for reference or deep introspection if needed)
             lot_ordered = item_dict["lot_ordered_qty"] or 0
             lot_delivered = item_dict["lot_delivered_qty"] or 0
@@ -546,7 +532,7 @@ def get_dc_detail(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
 
             # OVERRIDE: Show Item Level Ordered Quantity
             item_dict["ord_qty"] = item_ord_qty
-            
+
             # Calculate Item Level Pending
             item_dict["pending_qty"] = max(0, item_ord_qty - item_total_dispatched)
 
@@ -605,6 +591,7 @@ def update_dc(
 def delete_dc(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
     """Delete a Delivery Challan"""
     from backend.services.dc import delete_dc as service_delete_dc
+
     result = service_delete_dc(dc_number, db)
     if result.success:
         return result.data

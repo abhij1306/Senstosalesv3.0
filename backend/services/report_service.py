@@ -25,21 +25,12 @@ def get_reports(
 
 
 def get_pending_po_items(
-    db: sqlite3.Connection,
-    limit: int = 100,
-    offset: int = 0,
-    sort_by: str = "po_number",
-    order: str = "asc"
+    db: sqlite3.Connection, limit: int = 100, offset: int = 0, sort_by: str = "po_number", order: str = "asc"
 ) -> tuple[list[dict], int]:
     """
     Get items where pending_qty > 0 with full details (DC, Invoice, etc).
     """
-    sort_map = {
-        "po_number": "poi.po_number",
-        "description": "description",
-        "ord_qty": "poi.ord_qty",
-        "dispatch_delivered": "dispatch_delivered"
-    }
+    sort_map = {"po_number": "poi.po_number", "description": "description", "ord_qty": "poi.ord_qty", "dispatch_delivered": "dispatch_delivered"}
     db_sort_col = sort_map.get(sort_by, "poi.po_number")
     db_order = "DESC" if order.lower() == "desc" else "ASC"
 
@@ -84,6 +75,7 @@ def get_pending_po_items(
     rows = db.execute(query, (limit, offset)).fetchall()
     return [dict(row) for row in rows], total_count
 
+
 def get_selected_items_details(item_ids: list[str], db: sqlite3.Connection) -> list[dict]:
     """
     Get detailed data for specific items for Export.
@@ -92,7 +84,7 @@ def get_selected_items_details(item_ids: list[str], db: sqlite3.Connection) -> l
         return []
 
     placeholders = ",".join(["?"] * len(item_ids))
-    
+
     query = f"""
     WITH doc_aggregates AS (
         SELECT 
@@ -124,20 +116,20 @@ def get_selected_items_details(item_ids: list[str], db: sqlite3.Connection) -> l
     WHERE poi.id IN ({placeholders})
     ORDER BY poi.po_number, poi.po_item_no;
     """
-    
+
     # We pass placeholders twice (CTE and Main Query)
     params = item_ids + item_ids
     rows = db.execute(query, params).fetchall()
-    
+
     results = []
     for row in rows:
         d = dict(row)
         # Type casting simulation
-        d['ord_qty'] = float(d['ord_qty']) if d['ord_qty'] else 0.0
-        d['dispatch_delivered'] = float(d['dispatch_delivered']) if d['dispatch_delivered'] else 0.0
-        d['no_of_packets'] = float(d['no_of_packets']) if d['no_of_packets'] else 0.0
+        d["ord_qty"] = float(d["ord_qty"]) if d["ord_qty"] else 0.0
+        d["dispatch_delivered"] = float(d["dispatch_delivered"]) if d["dispatch_delivered"] else 0.0
+        d["no_of_packets"] = float(d["no_of_packets"]) if d["no_of_packets"] else 0.0
         results.append(d)
-        
+
     return results
 
 
@@ -161,6 +153,7 @@ def get_po_reconciliation_by_date(start: str, end: str, db: sqlite3.Connection) 
     rows = db.execute(query, (start, end)).fetchall()
     return [dict(row) for row in rows]
 
+
 def get_reconciliation_lots(po: str, db: sqlite3.Connection) -> list[dict]:
     """Get lot-wise reconciliation for a specific PO"""
     query = """
@@ -180,13 +173,7 @@ def get_reconciliation_lots(po: str, db: sqlite3.Connection) -> list[dict]:
 
 
 def get_dc_register(
-    start: str, 
-    end: str, 
-    db: sqlite3.Connection,
-    limit: int = 100,
-    offset: int = 0,
-    sort_by: str = "dc_date",
-    order: str = "desc"
+    start: str, end: str, db: sqlite3.Connection, limit: int = 100, offset: int = 0, sort_by: str = "dc_date", order: str = "desc"
 ) -> tuple[list[dict], int]:
     """DC Register with Pagination"""
     sort_map = {
@@ -194,7 +181,7 @@ def get_dc_register(
         "dc_number": "dc.dc_number",
         "po_number": "dc.po_number",
         "consignee_name": "dc.consignee_name",
-        "total_qty": "total_qty"
+        "total_qty": "total_qty",
     }
     db_sort_col = sort_map.get(sort_by, "dc.dc_date")
     db_order = "DESC" if order.lower() == "desc" else "ASC"
@@ -224,14 +211,9 @@ def get_dc_register(
     rows = db.execute(query, params + [limit, offset]).fetchall()
     return [dict(row) for row in rows], total_count
 
+
 def get_invoice_register(
-    start: str, 
-    end: str, 
-    db: sqlite3.Connection,
-    limit: int = 100,
-    offset: int = 0,
-    sort_by: str = "invoice_date",
-    order: str = "desc"
+    start: str, end: str, db: sqlite3.Connection, limit: int = 100, offset: int = 0, sort_by: str = "invoice_date", order: str = "desc"
 ) -> tuple[list[dict], int]:
     """Invoice Register with Pagination"""
     sort_map = {
@@ -239,7 +221,7 @@ def get_invoice_register(
         "invoice_number": "i.invoice_number",
         "po_number": "po_number",
         "dc_number": "i.dc_number",
-        "total_amount": "i.total_invoice_value"
+        "total_amount": "i.total_invoice_value",
     }
     db_sort_col = sort_map.get(sort_by, "i.invoice_date")
     db_order = "DESC" if order.lower() == "desc" else "ASC"
@@ -267,6 +249,7 @@ def get_invoice_register(
     """
     rows = db.execute(query, params + [limit, offset]).fetchall()
     return [dict(row) for row in rows], total_count
+
 
 def get_po_register(start: str, end: str, db: sqlite3.Connection) -> list[dict]:
     """PO Register"""

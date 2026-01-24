@@ -1,6 +1,7 @@
 """
 Database Session Management - Simplified
 """
+
 import logging
 import sqlite3
 from collections.abc import Generator
@@ -16,13 +17,13 @@ def get_connection() -> sqlite3.Connection:
     db_path = settings.DATABASE_URL.replace("sqlite:///", "")
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    
+
     # Performance settings (run once per connection)
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.execute("PRAGMA busy_timeout = 5000")
-    
+
     return conn
 
 
@@ -56,22 +57,26 @@ def transactional(func):
     """Decorator for endpoints that need transaction wrapping."""
     import inspect
     from functools import wraps
-    
+
     if inspect.iscoroutinefunction(func):
+
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
-            db = kwargs.get('db')
+            db = kwargs.get("db")
             if db is None:
                 raise ValueError("transactional requires 'db' parameter")
             with db_transaction(db):
                 return await func(*args, **kwargs)
+
         return async_wrapper
     else:
+
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            db = kwargs.get('db')
+            db = kwargs.get("db")
             if db is None:
                 raise ValueError("transactional requires 'db' parameter")
             with db_transaction(db):
                 return func(*args, **kwargs)
+
         return sync_wrapper

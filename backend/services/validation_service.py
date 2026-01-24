@@ -18,14 +18,10 @@ from backend.core.utils import get_financial_year
 
 logger = logging.getLogger(__name__)
 
+
 class ValidationService:
     @staticmethod
-    def check_duplicate_number(
-        db: sqlite3.Connection,
-        doc_type: Literal["DC", "Invoice"],
-        number: str,
-        date: str
-    ) -> Dict[str, Any]:
+    def check_duplicate_number(db: sqlite3.Connection, doc_type: Literal["DC", "Invoice"], number: str, date: str) -> Dict[str, Any]:
         """
         Check if a DC or Invoice number already exists within the same financial year.
         Ensures cross-document uniqueness (DC vs Invoice).
@@ -55,11 +51,7 @@ class ValidationService:
             # DC 344 and Invoice 344 can coexist in the same FY
             # Same-entity FY duplicate check (above) remains active
 
-            return {
-                "exists": exists,
-                "financial_year": fy,
-                "conflict_type": conflict_type
-            }
+            return {"exists": exists, "financial_year": fy, "conflict_type": conflict_type}
 
         except Exception as e:
             logger.error(f"Error in check_duplicate_number for {doc_type} #{number}: {e}", exc_info=True)
@@ -99,7 +91,7 @@ class ValidationService:
 
             dsp_qty = to_qty(dsp_qty_val)
             if dsp_qty is None:
-                 raise ValidationError(f"Item {idx + 1}: Invalid dispatch quantity format", details={"item_index": idx, "value": dsp_qty_val})
+                raise ValidationError(f"Item {idx + 1}: Invalid dispatch quantity format", details={"item_index": idx, "value": dsp_qty_val})
 
             if dsp_qty <= 0:
                 raise ValidationError(f"Item {idx + 1}: Dispatch quantity must be positive", details={"item_index": idx, "dsp_qty": dsp_qty})
@@ -132,7 +124,7 @@ class ValidationService:
                 if dsp_qty > remaining_global + 0.001:
                     raise BusinessRuleViolation(
                         f"Item {idx + 1}: Over-dispatch error (Physical Limit). Remaining: {remaining_global}.",
-                        details={"item_index": idx, "dsp_qty": dsp_qty, "remaining": remaining_global}
+                        details={"item_index": idx, "dsp_qty": dsp_qty, "remaining": remaining_global},
                     )
 
     @staticmethod
@@ -165,16 +157,13 @@ class ValidationService:
         """
         Validate that dispatch_qty <= pending_qty
         """
-        item = db.execute(
-            "SELECT ord_qty, dsp_qty FROM purchase_order_items WHERE id = ?", 
-            (po_item_id,)
-        ).fetchone()
-        
+        item = db.execute("SELECT ord_qty, dsp_qty FROM purchase_order_items WHERE id = ?", (po_item_id,)).fetchone()
+
         if not item:
             raise ResourceNotFoundError("PO Item", po_item_id)
-            
-        pending = (item['ord_qty'] or 0) - (item['dsp_qty'] or 0)
-        
+
+        pending = (item["ord_qty"] or 0) - (item["dsp_qty"] or 0)
+
         if dispatch_qty > (pending + 0.001):
             raise BusinessRuleViolation(f"Dispatch quantity ({dispatch_qty}) exceeds pending quantity ({pending})")
         return True

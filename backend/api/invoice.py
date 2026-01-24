@@ -135,7 +135,7 @@ def list_invoices(
     db: sqlite3.Connection = Depends(get_db),
 ):
     """List all Invoices (Paginated)"""
-    
+
     # Map frontend keys to DB columns
     sort_map = {
         "invoice_number": "inv.invoice_number",
@@ -143,9 +143,9 @@ def list_invoices(
         "po_numbers": "inv.po_numbers",
         "dc_number": "inv.dc_number",
         "total_invoice_value": "inv.total_invoice_value",
-        "created_at": "inv.created_at"
+        "created_at": "inv.created_at",
     }
-    
+
     db_sort_col = sort_map.get(sort_by, "inv.created_at")
     db_order = "DESC" if order.lower() == "desc" else "ASC"
 
@@ -163,10 +163,10 @@ def list_invoices(
             GROUP BY challan_no
         ) srv_agg ON inv.dc_number = srv_agg.challan_no
     """
-    
+
     where_clauses = ["1=1"]
     params = []
-    
+
     if po:
         where_clauses.append("inv.po_numbers LIKE ?")
         params.append(f"%{po}%")
@@ -174,11 +174,11 @@ def list_invoices(
     if dc:
         where_clauses.append("inv.dc_number = ?")
         params.append(dc)
-        
+
     if search:
         where_clauses.append("(inv.invoice_number LIKE ? OR inv.po_numbers LIKE ? OR inv.dc_number LIKE ? OR inv.buyer_name LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"])
-        
+
     where_stmt = " WHERE " + " AND ".join(where_clauses)
 
     # Get total count
@@ -200,7 +200,7 @@ def list_invoices(
         ORDER BY {db_sort_col} {db_order}
         LIMIT ? OFFSET ?
     """
-    
+
     rows = db.execute(query, params + [limit, offset]).fetchall()
 
     results = []
@@ -209,20 +209,13 @@ def list_invoices(
         total_ord_qty = row_dict["total_ord_qty"]
         total_rcd_qty = row_dict["total_rcd_qty"]
         total_dsp_qty = row_dict["total_dsp_qty"]
-        
+
         row_dict["total_pending_qty"] = calculate_pending_quantity(total_ord_qty, total_rcd_qty)
         row_dict["status"] = calculate_entity_status(total_ord_qty, total_dsp_qty, total_rcd_qty)
-        
+
         results.append(InvoiceListItem(**row_dict))
 
-    return PaginatedResponse(
-        items=results,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=(offset // limit) + 1,
-            limit=limit
-        )
-    )
+    return PaginatedResponse(items=results, metadata=PaginatedMetadata(total_count=total_count, page=(offset // limit) + 1, limit=limit))
 
 
 @router.get("/export-list")
@@ -241,15 +234,12 @@ def export_invoices_list(
     data = list_invoices(po, dc, db)
 
     # UI Columns: Invoice#, Date, Linked DCs, Linked POs, Items, Delivered, Value, Status
-    headers = [
-        "Invoice #", "Date", "Linked DCs", "Linked POs", "Items Count", 
-        "Delivered Qty", "Value", "Status", "Pending Qty"
-    ]
+    headers = ["Invoice #", "Date", "Linked DCs", "Linked POs", "Items Count", "Delivered Qty", "Value", "Status", "Pending Qty"]
 
     def iter_csv():
         output = io.StringIO()
         writer = csv.writer(output)
-        output.write('\ufeff')
+        output.write("\ufeff")
         writer.writerow(headers)
         output.seek(0)
         yield output.read()
@@ -275,11 +265,7 @@ def export_invoices_list(
             output.seek(0)
 
     filename = "Invoice_List_Export.csv"
-    return StreamingResponse(
-        iter_csv(),
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
+    return StreamingResponse(iter_csv(), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 @router.get("/{invoice_number:path}/download")
@@ -288,15 +274,15 @@ def download_invoice_excel(invoice_number: str, db: sqlite3.Connection = Depends
     try:
         data = get_invoice_detail(invoice_number, db)
         from backend.services.excel_service import ExcelService
-        
+
         # Custom Logic: Check for User Preference Path
         save_path = None
         try:
             row = db.execute("SELECT invoice FROM user_download_prefs ORDER BY id DESC LIMIT 1").fetchone()
             if row and row["invoice"]:
-                 save_path = row["invoice"]
+                save_path = row["invoice"]
         except Exception as e:
-             logger.warning(f"Failed to fetch download prefs: {e}")
+            logger.warning(f"Failed to fetch download prefs: {e}")
 
         return ExcelService.generate_exact_invoice_excel(data["header"], data["items"], db, save_path=save_path)
     except Exception as e:
@@ -310,7 +296,7 @@ def preview_invoice(dc_number: str, db: sqlite3.Connection = Depends(get_db)):
     Replaces heavy client-side aggregation.
     """
     from backend.services.invoice import generate_invoice_preview
-    
+
     result = generate_invoice_preview(dc_number, db)
     if result.success:
         return result.data
@@ -349,7 +335,7 @@ def get_invoice_detail(invoice_number: str, db: sqlite3.Connection = Depends(get
 
     header_dict = dict(invoice_row)
     header_dict["buyers_order_no"] = header_dict.get("po_numbers")
-    
+
     if not header_dict.get("buyers_order_date"):
         header_dict["buyers_order_date"] = header_dict.get("po_date")
 
@@ -389,13 +375,13 @@ def get_invoice_detail(invoice_number: str, db: sqlite3.Connection = Depends(get
     # Default buyer details from settings
     settings_rows = db.execute("SELECT key, value FROM settings").fetchall()
     settings = {row["key"]: row["value"] for row in settings_rows}
-    
+
     for field, key in [
         ("buyer_name", "buyer_name"),
         ("buyer_address", "buyer_address"),
         ("buyer_gstin", "buyer_gstin"),
         ("buyer_state", "buyer_state"),
-        ("place_of_supply", "buyer_place_of_supply")
+        ("place_of_supply", "buyer_place_of_supply"),
     ]:
         if not header_dict.get(field):
             header_dict[field] = settings.get(key, "")
@@ -453,7 +439,7 @@ def get_invoice_detail(invoice_number: str, db: sqlite3.Connection = Depends(get
 @transactional
 def create_invoice(request: EnhancedInvoiceCreate, db: sqlite3.Connection = Depends(get_db)):
     """Create Invoice from Delivery Challan with transaction safety"""
-    
+
     # Input Validation
     if not request.items:
         raise ValidationError("At least one item is required")
@@ -476,6 +462,7 @@ def create_invoice(request: EnhancedInvoiceCreate, db: sqlite3.Connection = Depe
 def delete_invoice(invoice_number: str, db: sqlite3.Connection = Depends(get_db)):
     """Delete an Invoice"""
     from backend.services.invoice import delete_invoice as service_delete_invoice
+
     result = service_delete_invoice(invoice_number, db)
     if result.success:
         return result.data

@@ -50,6 +50,7 @@ def normalize_date(val: Any) -> str:
 
     return ""
 
+
 def get_financial_year(date_str: str) -> str:
     """
     Derive Financial Year (April to March) from a date.
@@ -57,14 +58,14 @@ def get_financial_year(date_str: str) -> str:
     """
     try:
         if not date_str:
-            return "2025-26" # Default
-        
+            return "2025-26"  # Default
+
         dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
         if dt.month >= 4:
             start_year = dt.year
         else:
             start_year = dt.year - 1
-        
+
         end_year_short = str(start_year + 1)[2:]
         return f"{start_year}-{end_year_short}"
     except Exception:

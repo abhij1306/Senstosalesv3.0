@@ -16,8 +16,9 @@ def get_download_prefs(db: sqlite3.Connection = Depends(get_db)):
     If none exist, create and return defaults.
     """
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     defaults = {
         "po_html": r"C:\Downloads\PO_HTML",
         "srv_html": r"C:\Downloads\SRV_HTML",
@@ -26,9 +27,9 @@ def get_download_prefs(db: sqlite3.Connection = Depends(get_db)):
         "challan_summary": r"C:\Downloads\Challan_Summary",
         "invoice_summary": r"C:\Downloads\Invoice_Summary",
         "items_summary": r"C:\Downloads\Items_Summary",
-        "gc": r"C:\Downloads\GC"
+        "gc": r"C:\Downloads\GC",
     }
-    
+
     # Try to fetch existing
     try:
         row = db.execute(
@@ -53,11 +54,16 @@ def get_download_prefs(db: sqlite3.Connection = Depends(get_db)):
                     WHERE id=?
                     """,
                     (
-                        defaults["po_html"], defaults["srv_html"], defaults["challan"], 
-                        defaults["invoice"], defaults["challan_summary"], 
-                        defaults["invoice_summary"], defaults["items_summary"], defaults["gc"],
-                        result["id"]
-                    )
+                        defaults["po_html"],
+                        defaults["srv_html"],
+                        defaults["challan"],
+                        defaults["invoice"],
+                        defaults["challan_summary"],
+                        defaults["invoice_summary"],
+                        defaults["items_summary"],
+                        defaults["gc"],
+                        result["id"],
+                    ),
                 )
                 db.commit()
                 return {**defaults, "id": result["id"]}
@@ -70,11 +76,12 @@ def get_download_prefs(db: sqlite3.Connection = Depends(get_db)):
     logger.info("No existing prefs found, inserting defaults")
     # Ensure default directories exist (Fix for EXE build)
     import os
+
     for path in defaults.values():
         try:
-             os.makedirs(path, exist_ok=True)
+            os.makedirs(path, exist_ok=True)
         except:
-             pass
+            pass
 
     # Insert defaults AND commit so they persist
     try:
@@ -86,10 +93,15 @@ def get_download_prefs(db: sqlite3.Connection = Depends(get_db)):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                defaults["po_html"], defaults["srv_html"], defaults["challan"], 
-                defaults["invoice"], defaults["challan_summary"], 
-                defaults["invoice_summary"], defaults["items_summary"], defaults["gc"]
-            )
+                defaults["po_html"],
+                defaults["srv_html"],
+                defaults["challan"],
+                defaults["invoice"],
+                defaults["challan_summary"],
+                defaults["invoice_summary"],
+                defaults["items_summary"],
+                defaults["gc"],
+            ),
         )
         db.commit()  # Commit the default insert!
         new_id = cursor.lastrowid
@@ -109,8 +121,9 @@ def update_download_prefs(prefs: DownloadPrefs, db: sqlite3.Connection = Depends
     """
     import logging
     import os
+
     logger = logging.getLogger(__name__)
-    
+
     logger.info(f"Received download prefs update: po_html={prefs.po_html}, srv_html={prefs.srv_html}")
 
     # Validation & Creation Logic
@@ -121,31 +134,31 @@ def update_download_prefs(prefs: DownloadPrefs, db: sqlite3.Connection = Depends
         "invoice": prefs.invoice,
         "challan_summary": prefs.challan_summary,
         "invoice_summary": prefs.invoice_summary,
-        "items_summary": prefs.items_summary
+        "items_summary": prefs.items_summary,
     }
 
     for _key, path in paths.items():
         if not path:
             continue
-        
+
         # Clean path
         clean_path = os.path.abspath(path)
-        
+
         # Check for illegal chars (basic Windows check)
-        if any(c in clean_path for c in '<>|?*'):
-            continue # Skip invalid paths or handle error
+        if any(c in clean_path for c in "<>|?*"):
+            continue  # Skip invalid paths or handle error
 
         # Try to create directory
         try:
             os.makedirs(clean_path, exist_ok=True)
         except Exception:
-            pass # We accept the path even if creation fails (might be permissions), frontend shows warning usually
+            pass  # We accept the path even if creation fails (might be permissions), frontend shows warning usually
 
     # Update DB (Single Row Logic: Always Update latest or Insert new)
     # Check if exists
     cursor = db.execute("SELECT id FROM user_download_prefs ORDER BY id DESC LIMIT 1")
     row = cursor.fetchone()
-    
+
     if row:
         logger.info(f"Updating existing row id={row['id']}")
         db.execute(
@@ -156,10 +169,16 @@ def update_download_prefs(prefs: DownloadPrefs, db: sqlite3.Connection = Depends
             WHERE id=?
             """,
             (
-                prefs.po_html, prefs.srv_html, prefs.challan, prefs.invoice,
-                prefs.challan_summary, prefs.invoice_summary, prefs.items_summary, prefs.gc,
-                row["id"]
-            )
+                prefs.po_html,
+                prefs.srv_html,
+                prefs.challan,
+                prefs.invoice,
+                prefs.challan_summary,
+                prefs.invoice_summary,
+                prefs.items_summary,
+                prefs.gc,
+                row["id"],
+            ),
         )
     else:
         logger.info("No existing row, inserting new")
@@ -171,19 +190,22 @@ def update_download_prefs(prefs: DownloadPrefs, db: sqlite3.Connection = Depends
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                prefs.po_html, prefs.srv_html, prefs.challan, prefs.invoice,
-                prefs.challan_summary, prefs.invoice_summary, prefs.items_summary, prefs.gc
-            )
+                prefs.po_html,
+                prefs.srv_html,
+                prefs.challan,
+                prefs.invoice,
+                prefs.challan_summary,
+                prefs.invoice_summary,
+                prefs.items_summary,
+                prefs.gc,
+            ),
         )
-    
+
     # Explicit commit to ensure data is persisted
     db.commit()
     logger.info("Download prefs committed to database")
-    
+
     return {"success": True, "message": "Download preferences saved"}
-
-
-
 
 
 @router.get("/", response_model=Settings)
@@ -235,11 +257,7 @@ def get_settings_full(db: sqlite3.Connection = Depends(get_db)) -> dict[str, Any
         print(f"Error fetching download prefs: {e}")
         prefs = {}
 
-    return {
-        "settings": settings_dict,
-        "buyers": buyers_list,
-        "download_prefs": prefs
-    }
+    return {"settings": settings_dict, "buyers": buyers_list, "download_prefs": prefs}
 
 
 @router.post("/")
@@ -265,4 +283,3 @@ def update_settings_batch(settings: list[SettingsUpdate], db: sqlite3.Connection
     )
     # No manual commit - get_db handles it
     return {"success": True, "count": len(settings)}
-

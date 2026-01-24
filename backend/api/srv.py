@@ -30,7 +30,7 @@ async def upload_batch_srvs(files: list[UploadFile] = File(...), db: sqlite3.Con
     """
     results = []
     from backend.services.srv_ingestion_optimized import process_srv_file_async
-    
+
     successful_count = 0
     failed_count = 0
 
@@ -42,28 +42,32 @@ async def upload_batch_srvs(files: list[UploadFile] = File(...), db: sqlite3.Con
                 continue
 
             # Extract PO number from filename
-            po_match = re.search(r"PO_?(\d+)", file.filename, re.IGNORECASE) or \
-                       re.search(r"SRV_(\d+)", file.filename, re.IGNORECASE) or \
-                       re.search(r"^(\d+)", file.filename)
-            
+            po_match = (
+                re.search(r"PO_?(\d+)", file.filename, re.IGNORECASE)
+                or re.search(r"SRV_(\d+)", file.filename, re.IGNORECASE)
+                or re.search(r"^(\d+)", file.filename)
+            )
+
             po_from_filename = po_match.group(1) if po_match else None
             content = await file.read()
-            
+
             # The service handles its own transactions internally (optimized)
             success, detailed_results, s_count, f_count = await process_srv_file_async(content, file.filename, db, po_from_filename)
 
             # Extract messages and status from detailed results
             msg_list = [res.get("message", "") for res in detailed_results]
             status_type = detailed_results[0].get("status_type") if detailed_results else None
-            
-            results.append({
-                "filename": file.filename,
-                "success": success,
-                "message": "; ".join(msg_list),
-                "successful": s_count,
-                "failed": f_count,
-                "status_type": status_type
-            })
+
+            results.append(
+                {
+                    "filename": file.filename,
+                    "success": success,
+                    "message": "; ".join(msg_list),
+                    "successful": s_count,
+                    "failed": f_count,
+                    "status_type": status_type,
+                }
+            )
             successful_count += s_count
             failed_count += f_count
 
@@ -101,9 +105,9 @@ def get_srv_list(
         "total_rcd_qty": "total_received_qty",
         "total_rej_qty": "total_rejected_qty",
         "total_accepted_qty": "total_accepted_qty",
-        "created_at": "s.created_at"
+        "created_at": "s.created_at",
     }
-    
+
     db_sort_col = sort_map.get(sort_by, "s.srv_date")
     db_order = "DESC" if order.lower() == "desc" else "ASC"
 
@@ -113,18 +117,18 @@ def get_srv_list(
         LEFT JOIN srv_items si ON s.srv_number = si.srv_number
         LEFT JOIN purchase_orders po ON s.po_number = po.po_number
     """
-    
+
     where_clauses = ["1=1"]
     params = []
-    
+
     if po_number:
         where_clauses.append("s.po_number = ?")
         params.append(po_number)
-        
+
     if search:
         where_clauses.append("(s.srv_number LIKE ? OR s.po_number LIKE ? OR s.invoice_number LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
-        
+
     where_stmt = " WHERE " + " AND ".join(where_clauses)
 
     # Get total count
@@ -170,14 +174,7 @@ def get_srv_list(
         for row in rows
     ]
 
-    return PaginatedResponse(
-        items=results,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=(offset // limit) + 1,
-            limit=limit
-        )
-    )
+    return PaginatedResponse(items=results, metadata=PaginatedMetadata(total_count=total_count, page=(offset // limit) + 1, limit=limit))
 
 
 @router.get("/po/{po_number}/srvs")
@@ -190,9 +187,9 @@ def get_srvs_by_po(po_number: str, db: sqlite3.Connection = Depends(get_db)):
         WHERE po_number = ?
         ORDER BY srv_date DESC
         """,
-        (po_number,)
+        (po_number,),
     ).fetchall()
-    
+
     return [
         {
             "srv_number": row["srv_number"],
@@ -260,10 +257,7 @@ def get_srv_detail(srv_number: str, db: sqlite3.Connection = Depends(get_db)):
         (srv_number,),
     ).fetchall()
 
-    return SRVDetail(
-        header=SRVHeader(**dict(header_result)),
-        items=[SRVItem(**dict(row)) for row in items_result]
-    )
+    return SRVDetail(header=SRVHeader(**dict(header_result)), items=[SRVItem(**dict(row)) for row in items_result])
 
 
 @router.delete("/{srv_number}")
@@ -272,16 +266,18 @@ def delete_srv_endpoint(srv_number: str, db: sqlite3.Connection = Depends(get_db
     """Delete an SRV with transaction safety and reconciliation"""
     # Fetch PO number before deletion for reconciliation
     po_row = db.execute("SELECT po_number FROM srvs WHERE srv_number = ?", (srv_number,)).fetchone()
-    
+
     from backend.services.srv_ingestion_optimized import delete_srv_fast as delete_srv
+
     success, message = delete_srv(srv_number, db)
-    
+
     if not success:
         raise ValidationError(message)
-    
+
     # Reconcile the PO if it was found
     if po_row:
         from backend.services.srv_ingestion_optimized import reconcile_po_fast
+
         reconcile_po_fast(db, po_row["po_number"])
-        
+
     return {"message": f"{message} & PO Reconciled"}

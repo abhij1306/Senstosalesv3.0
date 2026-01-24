@@ -78,6 +78,7 @@ def get_dc_register(
     """DC Register"""
     if not start_date or not end_date:
         from datetime import datetime, timedelta
+
         end = datetime.now()
         start = end - timedelta(days=30)
         start_date = start.strftime("%Y-%m-%d")
@@ -87,25 +88,18 @@ def get_dc_register(
         data, _ = report_service.get_dc_register(start_date, end_date, db, limit=5000)
         save_path = get_save_path(db, "challan_summary")
         return ExcelService.generate_from_list(data, f"DC_Register_{start_date}_{end_date}.xlsx", save_path)
-    
+
     data, total_count = report_service.get_dc_register(start_date, end_date, db, limit, offset, sort_by, order)
     # Filter empty DC numbers if any (simulating df.dropna)
     data = [d for d in data if d.get("dc_number")]
-    
+
     # Fill N/A (simulating df.fillna) -- Optional, but let's be safe
     for d in data:
         for k, v in d.items():
             if v is None:
                 d[k] = ""
 
-    return PaginatedResponse(
-        items=data,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=(offset // limit) + 1,
-            limit=limit
-        )
-    )
+    return PaginatedResponse(items=data, metadata=PaginatedMetadata(total_count=total_count, page=(offset // limit) + 1, limit=limit))
 
 
 @router.get("/register/invoice", response_model=PaginatedResponse)
@@ -122,6 +116,7 @@ def get_invoice_register(
     """Invoice Register"""
     if not start_date or not end_date:
         from datetime import datetime, timedelta
+
         end = datetime.now()
         start = end - timedelta(days=30)
         start_date = start.strftime("%Y-%m-%d")
@@ -131,23 +126,16 @@ def get_invoice_register(
         data, _ = report_service.get_invoice_register(start_date, end_date, db, limit=5000)
         save_path = get_save_path(db, "invoice_summary")
         return ExcelService.generate_from_list(data, f"Invoice_Register_{start_date}_{end_date}.xlsx", save_path)
-    
+
     data, total_count = report_service.get_invoice_register(start_date, end_date, db, limit, offset, sort_by, order)
     data = [d for d in data if d.get("invoice_number")]
-    
+
     for d in data:
         for k, v in d.items():
             if v is None:
                 d[k] = ""
-    
-    return PaginatedResponse(
-        items=data,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=(offset // limit) + 1,
-            limit=limit
-        )
-    )
+
+    return PaginatedResponse(items=data, metadata=PaginatedMetadata(total_count=total_count, page=(offset // limit) + 1, limit=limit))
 
 
 @router.get("/register/po")
@@ -170,12 +158,10 @@ def download_po_summary(
         data = report_service.get_po_register(start_date, end_date, db)
 
         date_str = f"{start_date or 'ALL'}_to_{end_date or 'ALL'}"
-        
+
         save_path = get_save_path(db, "items_summary")
         # Ensure data is list of dicts (it is)
-        return ExcelService.generate_dispatch_summary(
-            date_str, data, db, save_path
-        )
+        return ExcelService.generate_dispatch_summary(date_str, data, db, save_path)
     except Exception as e:
         logger.error(f"Failed to generate PO Register: {e}")
         raise internal_error(str(e), e) from e
@@ -183,12 +169,7 @@ def download_po_summary(
 
 @router.get("/pending", response_model=PaginatedResponse)
 def get_pending_items(
-    limit: int = 100,
-    offset: int = 0,
-    sort_by: str = "po_number",
-    order: str = "asc",
-    export: bool = False, 
-    db: sqlite3.Connection = Depends(get_db)
+    limit: int = 100, offset: int = 0, sort_by: str = "po_number", order: str = "asc", export: bool = False, db: sqlite3.Connection = Depends(get_db)
 ):
     """Pending PO Items (Shortages)"""
     if export:
@@ -200,23 +181,16 @@ def get_pending_items(
         except Exception as e:
             logger.error(f"Failed to generate Pending PO Items report: {e}")
             raise internal_error(str(e), e) from e
-            
+
     data, total_count = report_service.get_pending_po_items(db, limit, offset, sort_by, order)
     data = [d for d in data if d.get("po_number") and d.get("description")]
-    
+
     for d in data:
         for k, v in d.items():
             if v is None:
                 d[k] = ""
-    
-    return PaginatedResponse(
-        items=data,
-        metadata=PaginatedMetadata(
-            total_count=total_count,
-            page=(offset // limit) + 1,
-            limit=limit
-        )
-    )
+
+    return PaginatedResponse(items=data, metadata=PaginatedMetadata(total_count=total_count, page=(offset // limit) + 1, limit=limit))
 
 
 class ExportRequest(BaseModel):
@@ -225,10 +199,7 @@ class ExportRequest(BaseModel):
 
 
 @router.post("/export-selected")
-def export_selected_items(
-    request: ExportRequest,
-    db: sqlite3.Connection = Depends(get_db)
-):
+def export_selected_items(request: ExportRequest, db: sqlite3.Connection = Depends(get_db)):
     """
     Export specific selected items to Excel (Technical Summary Format).
     Supports:
@@ -252,10 +223,10 @@ def export_selected_items(
                 # Composite ID or UUID
                 parts = uid_str.split("-")
                 if len(parts) >= 3 and (uid_str.startswith("pending-") or uid_str.startswith("sales-") or uid_str.startswith("reconciliation-")):
-                     # Extract original ID from composite
-                     clean_ids.append(uid_str.split("-", 2)[-1])
+                    # Extract original ID from composite
+                    clean_ids.append(uid_str.split("-", 2)[-1])
                 else:
-                     clean_ids.append(uid_str) # Likely a plain UUID
+                    clean_ids.append(uid_str)  # Likely a plain UUID
             else:
                 clean_ids.append(uid)
 
@@ -280,16 +251,17 @@ def export_selected_items(
             clean_ids.extend([str(r[0]) for r in rows if r[0]])
 
         if not clean_ids:
-             # Fallback: if we just have DC/Invoice headers but no items, maybe we just want the header summary?
-             # For now, let's stick to the Technical Summary (Item level)
-             from backend.core.errors import bad_request
-             raise bad_request("No valid items found for selection")
+            # Fallback: if we just have DC/Invoice headers but no items, maybe we just want the header summary?
+            # For now, let's stick to the Technical Summary (Item level)
+            from backend.core.errors import bad_request
+
+            raise bad_request("No valid items found for selection")
 
         # Deduplicate
         clean_ids = list(set(clean_ids))
 
         items = report_service.get_selected_items_details(clean_ids, db)
-        
+
         # Determine save path based on report type
         key = "items_summary"
         if request.report_type == "dc_register":
@@ -394,6 +366,7 @@ def get_guarantee_certificate(dc_number: str, db: sqlite3.Connection = Depends(g
     ).fetchone()
     if not dc_row:
         from backend.core.errors import not_found
+
         raise not_found(f"DC {dc_number} not found", "DC")
     header = dict(dc_row)
 
@@ -421,5 +394,5 @@ def get_guarantee_certificate(dc_number: str, db: sqlite3.Connection = Depends(g
     if po_row:
         header["po_date"] = po_row[0]
 
-    save_path = get_save_path(db, "challan") # GC goes to Challan folder
+    save_path = get_save_path(db, "challan")  # GC goes to Challan folder
     return ExcelService.generate_gc_excel(header, items, db, save_path)
