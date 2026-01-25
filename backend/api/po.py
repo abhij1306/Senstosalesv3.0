@@ -3,6 +3,7 @@ Purchase Order Router
 CRUD operations and HTML upload/scraping
 """
 
+import asyncio
 import logging
 import sqlite3
 
@@ -241,6 +242,14 @@ async def process_po_update(po_data: PODetail, db: sqlite3.Connection):
     raise ValidationError(f"Failed to ingest PO: {', '.join(warnings)}")
 
 
+def parse_po_html(content: bytes) -> tuple[dict, list[dict]]:
+    """Helper to parse PO HTML in a thread-safe way (CPU-bound)"""
+    soup = BeautifulSoup(content, "lxml")
+    po_header = extract_po_header(soup)
+    po_items = extract_items(soup)
+    return po_header, po_items
+
+
 @router.post("/upload")
 @transactional
 async def upload_po_html(file: UploadFile = File(...), db: sqlite3.Connection = Depends(get_db)):
@@ -249,9 +258,7 @@ async def upload_po_html(file: UploadFile = File(...), db: sqlite3.Connection = 
         raise ValidationError("Only HTML files are supported")
 
     content = await file.read()
-    soup = BeautifulSoup(content, "lxml")
-    po_header = extract_po_header(soup)
-    po_items = extract_items(soup)
+    po_header, po_items = await asyncio.to_thread(parse_po_html, content)
 
     if not po_header.get("PURCHASE ORDER"):
         raise ValidationError("Could not extract PO number from HTML")
@@ -294,11 +301,9 @@ async def upload_po_batch(files: list[UploadFile] = File(...), db: sqlite3.Conne
             try:
                 content = await file.read()
             except Exception:
-                content = await file.read() 
+                content = await file.read()
 
-            soup = BeautifulSoup(content, "lxml")
-            po_header = extract_po_header(soup)
-            po_items = extract_items(soup)
+            po_header, po_items = await asyncio.to_thread(parse_po_html, content)
 
             if not po_header.get("PURCHASE ORDER"):
                 raise ValueError("Missing PO Number")
