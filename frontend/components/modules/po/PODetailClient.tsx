@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatIndianCurrency, formatDate, cn } from "@/lib/utils";
@@ -90,6 +90,22 @@ export function PODetailClient({
     const h = header;
     const poItems = items; // Alias for usage below
 
+    // Calculate if there are any items with remaining balance to dispatch
+    const hasDispatchableItems = useMemo(() => poItems.some((item: any) => {
+        // Check each delivery lot for remaining balance
+        if (item.deliveries && item.deliveries.length > 0) {
+            return item.deliveries.some((del: any) => {
+                const ordered = del.ord_qty || 0;
+                const dispatched = del.dsp_qty || 0;
+                return (ordered - dispatched) > TOLERANCE;
+            });
+        }
+        // Fallback to item-level check
+        const ordered = item.ord_qty || 0;
+        const dispatched = item.dsp_qty || 0;
+        return (ordered - dispatched) > TOLERANCE;
+    }) ?? false, [poItems]);
+
     return (
         <DocumentTemplate
             title="Purchase Order Details"
@@ -175,22 +191,6 @@ export function PODetailClient({
                     {(() => {
                         const isClosed = ["Dispatch", "Closed", "Completed"].includes(h.po_status || "");
                         const hasDC = initialDC?.has_dc;
-
-                        // Calculate if there are any items with remaining balance to dispatch
-                        const hasDispatchableItems = poItems.some((item: any) => {
-                            // Check each delivery lot for remaining balance
-                            if (item.deliveries && item.deliveries.length > 0) {
-                                return item.deliveries.some((del: any) => {
-                                    const ordered = del.ord_qty || 0;
-                                    const dispatched = del.dsp_qty || 0;
-                                    return (ordered - dispatched) > TOLERANCE;
-                                });
-                            }
-                            // Fallback to item-level check
-                            const ordered = item.ord_qty || 0;
-                            const dispatched = item.dsp_qty || 0;
-                            return (ordered - dispatched) > TOLERANCE;
-                        }) ?? false;
 
                         // Disable if: (no DC exists AND status is closed) OR no items to dispatch
                         const shouldDisable = (!hasDC && isClosed) || (!hasDC && !hasDispatchableItems);
