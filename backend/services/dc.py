@@ -157,56 +157,81 @@ def create_dc(dc: DCCreate, items: list[dict], db: sqlite3.Connection) -> Servic
         )
 
         # Insert DC items with ATOMIC INVENTORY CHECK (R-01) - AT ITEM LEVEL
+        # Optimization: Prepare all items and use executemany for bulk insertion
+        params_list = []
+        dc_item_ids = []
+        item_map = {}  # Map generated ID to item details for error reporting
+
         for item in items:
             po_item_id = item["po_item_id"]
             total_dsp_qty = to_qty(item["dsp_qty"])
-            
-            # AT ITEM LEVEL: We don't care about specific target_lot anymore
-            # Record against a single entry (lot_no=1) for consistency with schema if needed
             item_id = str(uuid.uuid4())
 
-            # We use a single INSERT ... SELECT statement to ensure atomicity at ITEM level.
-            cursor = db.execute(
-                """
-                INSERT INTO delivery_challan_items
-                (id, dc_number, po_item_id, lot_no, dsp_qty, hsn_code, hsn_rate)
-                SELECT ?, ?, ?, 1, ?, ?, ?
-                WHERE EXISTS (
-                    -- R-01: Atomic Inventory Check at ITEM Level
-                    SELECT 1
-                    FROM purchase_order_items poi
-                    WHERE poi.id = ?
-                    AND (
-                        poi.ord_qty - (
-                            SELECT COALESCE(SUM(dsp_qty), 0)
-                            FROM delivery_challan_items
-                            WHERE po_item_id = poi.id
-                        )
-                    ) >= ? - 0.001
-                )
-                """,
-                (
-                    item_id,
-                    final_dc_number,
-                    po_item_id,
-                    total_dsp_qty,
-                    item.get("hsn_code"),
-                    item.get("hsn_rate"),
-                    # Subquery params
-                    po_item_id,
-                    total_dsp_qty,
-                ),
-            )
+            dc_item_ids.append(item_id)
+            item_map[item_id] = {
+                "po_item_id": po_item_id,
+                "total_dsp_qty": total_dsp_qty
+            }
 
-            if cursor.rowcount == 0:
-                raise BusinessRuleViolation(
-                    f"Inventory check failed for Item {po_item_id}. Attempted to dispatch {total_dsp_qty}, but insufficient remaining quantity.",
-                    details={
-                        "item_id": po_item_id,
-                        "attempted_qty": total_dsp_qty,
-                        "invariant": "R-01 (Atomic Item-Level Check)",
-                    },
-                )
+            params_list.append((
+                item_id,
+                final_dc_number,
+                po_item_id,
+                total_dsp_qty,
+                item.get("hsn_code"),
+                item.get("hsn_rate"),
+                # Subquery params
+                po_item_id,
+                total_dsp_qty,
+            ))
+
+        # We use a single INSERT ... SELECT statement template for bulk execution.
+        # Although executemany executes sequentially, it avoids Python loop overhead.
+        sql = """
+            INSERT INTO delivery_challan_items
+            (id, dc_number, po_item_id, lot_no, dsp_qty, hsn_code, hsn_rate)
+            SELECT ?, ?, ?, 1, ?, ?, ?
+            WHERE EXISTS (
+                -- R-01: Atomic Inventory Check at ITEM Level
+                SELECT 1
+                FROM purchase_order_items poi
+                WHERE poi.id = ?
+                AND (
+                    poi.ord_qty - (
+                        SELECT COALESCE(SUM(dsp_qty), 0)
+                        FROM delivery_challan_items
+                        WHERE po_item_id = poi.id
+                    )
+                ) >= ? - 0.001
+            )
+        """
+
+        cursor = db.executemany(sql, params_list)
+
+        # Check if all items were inserted
+        if cursor.rowcount != len(items):
+            # Identifying which item failed
+            # We query the DB for the IDs that were successfully inserted for this DC
+            inserted_rows = db.execute(
+                "SELECT id FROM delivery_challan_items WHERE dc_number = ?",
+                (final_dc_number,)
+            ).fetchall()
+
+            # Extract IDs handling both sqlite3.Row and tuple
+            inserted_ids = {row[0] if isinstance(row, tuple) else row["id"] for row in inserted_rows}
+
+            # Find the first item that was not inserted
+            for item_id in dc_item_ids:
+                if item_id not in inserted_ids:
+                    failed_item = item_map[item_id]
+                    raise BusinessRuleViolation(
+                        f"Inventory check failed for Item {failed_item['po_item_id']}. Attempted to dispatch {failed_item['total_dsp_qty']}, but insufficient remaining quantity.",
+                        details={
+                            "item_id": failed_item["po_item_id"],
+                            "attempted_qty": failed_item["total_dsp_qty"],
+                            "invariant": "R-01 (Atomic Item-Level Check)",
+                        },
+                    )
 
         # SYNC: Update PO's our_ref if DC provides one
         if dc.our_ref and dc.po_number:
