@@ -25,7 +25,6 @@ function CreateInvoicePageContent() {
   const setItems = useInvoiceStore(s => s.setItems);
   const setNumberStatus = useInvoiceStore(s => s.setNumberStatus);
   const reset = useInvoiceStore(s => s.reset);
-  const clear = useInvoiceStore(s => s.clear);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -70,7 +69,6 @@ function CreateInvoicePageContent() {
 
   useEffect(() => {
     // Prevent hydration flicker by resetting store BEFORE rendering form
-    // CRITICAL FIX: Use setInvoice instead of clear+setHeader to guarantee atomic replacement and no stale merge.
     setIsInitialized(false);
     setInvoice({
       header: {
@@ -231,8 +229,10 @@ function CreateInvoicePageContent() {
         }
       }
 
-      setHeader(initialHeader as any);
-      setItems(preview.items); // Items already consolidated and calculated by backend
+      setInvoice({
+        header: initialHeader as any,
+        items: preview.items // Items already consolidated and calculated by backend
+      });
 
     } catch (err: any) {
       // Handle the strict error from backend (Already invoiced, Not found)
