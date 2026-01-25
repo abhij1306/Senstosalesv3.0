@@ -352,45 +352,100 @@ def update_dc(dc_number: str, dc: DCCreate, items: list[dict], db: sqlite3.Conne
         db.execute("DELETE FROM delivery_challan_items WHERE dc_number = ?", (dc_number,))
 
         # Insert new items with ATOMIC INVENTORY CHECK (R-01) - AT ITEM LEVEL
+        # OPTIMIZED: Batch insert to prevent N+1 queries
+
+        # 1. Normalize keys and prepare IDs
+        po_item_ids = []
         for item in items:
-            # Normalize keys if needed (frontend sends 'dispatch_qty')
             if "dispatch_qty" in item and "dsp_qty" not in item:
                 item["dsp_qty"] = item.pop("dispatch_qty")
+            po_item_ids.append(item["po_item_id"])
 
+        # 2. Batch fetch PO item states (for validation)
+        # Use LEFT JOIN to calculate current dispatched quantity directly from source (delivery_challan_items)
+        # instead of relying on purchase_order_items.dsp_qty (trigger-maintained).
+        # This is more robust. Since we deleted this DC's items, dci only contains other DCs.
+        po_map = {}
+        if po_item_ids:
+            placeholders = ",".join("?" for _ in po_item_ids)
+            po_rows = db.execute(
+                f"""
+                SELECT poi.id, poi.ord_qty, COALESCE(SUM(dci.dsp_qty), 0) as used_qty
+                FROM purchase_order_items poi
+                LEFT JOIN delivery_challan_items dci ON dci.po_item_id = poi.id
+                WHERE poi.id IN ({placeholders})
+                GROUP BY poi.id
+                """,
+                po_item_ids
+            ).fetchall()
+
+            for row in po_rows:
+                # Handle both sqlite3.Row (dict-like) and tuple
+                try:
+                     rid = row["id"]
+                     ord_qty = row["ord_qty"]
+                     used_qty = row["used_qty"]
+                except (TypeError, IndexError):
+                     rid = row[0]
+                     ord_qty = row[1]
+                     used_qty = row[2]
+                po_map[rid] = {"ord_qty": ord_qty, "dsp_qty": used_qty}
+
+        insert_data = []
+
+        for item in items:
             po_item_id = item["po_item_id"]
             total_dsp_qty = to_qty(item["dsp_qty"])
             item_id = str(uuid.uuid4())
 
-            cursor = db.execute(
+            # Validation
+            po_state = po_map.get(po_item_id)
+            if not po_state:
+                 # This might happen if po_item_id is invalid.
+                 # However, foreign key constraint on insert would catch it too,
+                 # but we want to catch it here for clean error or pass through to insert failure.
+                 # Let's let it fail at insert or raise error here.
+                 raise ResourceNotFoundError("PO Item", po_item_id)
+
+            # Check availability
+            # R-01: Atomic Inventory Check
+            available_qty = (po_state["ord_qty"] or 0) - (po_state["dsp_qty"] or 0)
+
+            if total_dsp_qty > available_qty + 0.001:
+                raise BusinessRuleViolation(
+                    f"Inventory check failed for Item {po_item_id}. Attempted to dispatch {total_dsp_qty}, but insufficient remaining quantity.",
+                    details={
+                        "item_id": po_item_id,
+                        "attempted_qty": total_dsp_qty,
+                        "remaining": available_qty,
+                        "invariant": "R-01 (Atomic Item-Level Check)",
+                    },
+                )
+
+            # Update local state to account for this dispatch in subsequent checks within the same batch
+            po_state["dsp_qty"] = (po_state["dsp_qty"] or 0) + total_dsp_qty
+
+            # Prepare tuple for bulk insert
+            insert_data.append((
+                item_id,
+                dc_number,
+                po_item_id,
+                1, # lot_no hardcoded to 1
+                total_dsp_qty,
+                item.get("hsn_code"),
+                item.get("hsn_rate")
+            ))
+
+        # 3. Batch Insert
+        if insert_data:
+            db.executemany(
                 """
                 INSERT INTO delivery_challan_items
                 (id, dc_number, po_item_id, lot_no, dsp_qty, hsn_code, hsn_rate)
-                SELECT ?, ?, ?, 1, ?, ?, ?
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM purchase_order_items poi
-                    WHERE poi.id = ?
-                    AND (
-                        poi.ord_qty - (
-                            SELECT COALESCE(SUM(dsp_qty), 0)
-                            FROM delivery_challan_items
-                            WHERE po_item_id = poi.id
-                        )
-                    ) >= ? - 0.001
-                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    item_id, dc_number, po_item_id, total_dsp_qty,
-                    item.get("hsn_code"), item.get("hsn_rate"),
-                    po_item_id, total_dsp_qty,
-                ),
+                insert_data
             )
-
-            if cursor.rowcount == 0:
-                raise BusinessRuleViolation(
-                    f"Inventory check failed for Item {po_item_id}. Attempted to dispatch {total_dsp_qty}, but insufficient remaining quantity.",
-                    details={"item_id": po_item_id, "attempted_qty": total_dsp_qty, "invariant": "R-01"},
-                )
 
         # ATOMIC SYNC: Re-reconcile PO after DC update
         ReconciliationService.reconcile_dc(db, dc_number)
