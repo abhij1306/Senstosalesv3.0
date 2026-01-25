@@ -137,27 +137,55 @@ class POIngestionService:
             )
 
             # 6. Process Items
-            # Scraper now returns structured objects with nested 'deliveries'
+            # Fetch existing items for bulk processing
+            existing_items_rows = db.execute(
+                "SELECT po_item_no, id FROM purchase_order_items WHERE po_number = ?",
+                (po_number,)
+            ).fetchall()
+            existing_item_map = {row["po_item_no"]: row["id"] for row in existing_items_rows}
+
+            # Prepare data containers
+            items_to_insert = []
+            deliveries_to_insert = []
+            # We need to collect tracking data for all these items
+            # Since we will rebuild deliveries, we need to know what to keep.
+
+            # First pass: Prepare item data and IDs
+            # To perform batch insert, keys must be consistent.
+            # We'll define the keys and map values.
+
+            # Since executemany with named parameters (dict) requires consistent keys,
+            # we should define the schema of item_data explicitly.
+
+            item_data_keys = [
+                "id", "po_number", "po_item_no", "status", "material_code", "material_description",
+                "drg_no", "mtrl_cat", "unit", "po_rate", "ord_qty", "rcd_qty", "rej_qty",
+                "dsp_qty", "hsn_code", "item_value"
+            ]
+
+            # For delivery tracking fetching
+            item_ids_to_process = []
+
+            # Temporary storage to link item dict to its deliveries for second pass
+            items_with_ids = []
+
             for item in po_items:
                 po_item_no = to_int(item.get("PO ITM"))
                 if po_item_no is None:
                     continue
 
-                # Use existing ID to prevent breaking FKs on update
-                existing_item = db.execute(
-                    "SELECT id FROM purchase_order_items WHERE po_number = ? AND po_item_no = ?",
-                    (po_number, po_item_no),
-                ).fetchone()
-                item_id = existing_item["id"] if existing_item else str(uuid.uuid4())
+                # Resolve ID
+                item_id = existing_item_map.get(po_item_no) or str(uuid.uuid4())
                 processed_item_ids.append(item_id)
+                item_ids_to_process.append(item_id)
 
                 ord_qty = to_qty(item.get("ORD QTY") or item.get("ord_qty") or 0)
                 rcd_qty = to_qty(item.get("RCD QTY") or item.get("rcd_qty") or 0)
                 rej_qty = to_qty(item.get("REJ QTY") or item.get("rej_qty") or 0)
                 po_rate = to_money(item.get("PO RATE") or item.get("po_rate") or 0)
 
-                # Prepare dynamic item data
-                item_data = {
+                # Prepare item dict
+                item_vals = {
                     "id": item_id,
                     "po_number": po_number,
                     "po_item_no": po_item_no,
@@ -175,15 +203,21 @@ class POIngestionService:
                     "hsn_code": item.get("HSN CODE") or item.get("hsn_code"),
                     "item_value": to_money(item.get("ITEM VALUE") or item.get("item_value") or (ord_qty * po_rate)),
                 }
+                items_to_insert.append(item_vals)
 
-                # Column list for insertion
-                item_cols = ", ".join(item_data.keys())
-                item_placeholders = ", ".join(["?"] * len(item_data))
+                # Store for delivery processing
+                items_with_ids.append((item_id, item, ord_qty))
+
+            # Batch Upsert Items
+            if items_to_insert:
+                item_cols = ", ".join(item_data_keys)
+                item_placeholders = ", ".join([f":{k}" for k in item_data_keys])
                 
                 # Update part for ON CONFLICT
-                item_update_stmt = ", ".join([f"{col}=excluded.{col}" for col in item_data.keys() if col not in ["po_number", "po_item_no", "id"]])
+                # Excluding pk (id) and composite unique key (po_number, po_item_no)
+                item_update_stmt = ", ".join([f"{col}=excluded.{col}" for col in item_data_keys if col not in ["po_number", "po_item_no", "id"]])
 
-                db.execute(
+                db.executemany(
                     f"""
                     INSERT INTO purchase_order_items ({item_cols}) 
                     VALUES ({item_placeholders})
@@ -191,53 +225,78 @@ class POIngestionService:
                         {item_update_stmt},
                         updated_at=CURRENT_TIMESTAMP
                     """,
-                    tuple(item_data.values()),
+                    items_to_insert,
                 )
 
-                # 8. Manage Deliveries
-                # Backup tracking data before refreshing schedules
-                existing_tracking = {}
-                rows = db.execute(
-                    "SELECT lot_no, dsp_qty, rcd_qty, manual_override_qty FROM purchase_order_deliveries WHERE po_item_id = ?",
-                    (item_id,),
+            # 8. Manage Deliveries
+            if item_ids_to_process:
+                # Batch fetch existing tracking
+                placeholders = ",".join(["?"] * len(item_ids_to_process))
+                existing_tracking_rows = db.execute(
+                    f"SELECT po_item_id, lot_no, dsp_qty, rcd_qty, manual_override_qty FROM purchase_order_deliveries WHERE po_item_id IN ({placeholders})",
+                    item_ids_to_process,
                 ).fetchall()
-                for row in rows:
-                    existing_tracking[to_int(row["lot_no"])] = {
+
+                # Map: item_id -> lot_no -> {dsp, rcd, manual}
+                tracking_map = {}
+                for row in existing_tracking_rows:
+                    i_id = row["po_item_id"]
+                    l_no = to_int(row["lot_no"])
+                    if i_id not in tracking_map:
+                        tracking_map[i_id] = {}
+                    tracking_map[i_id][l_no] = {
                         "dsp": row["dsp_qty"] or 0,
                         "rcd": row["rcd_qty"] or 0,
                         "manual": row["manual_override_qty"] or 0,
                     }
 
-                db.execute("DELETE FROM purchase_order_deliveries WHERE po_item_id = ?", (item_id,))
+                # Batch Delete Deliveries
+                db.execute(f"DELETE FROM purchase_order_deliveries WHERE po_item_id IN ({placeholders})", item_ids_to_process)
 
-                # Iterate through extracted lots
-                deliveries = item.get("deliveries", [])
-                if not deliveries:
-                    # Fallback for old scraper or manual items
-                    deliveries = [{"LOT NO": 1, "DELY QTY": ord_qty}]
+                # Prepare Delivery Inserts
+                for item_id, item, ord_qty in items_with_ids:
+                    # Iterate through extracted lots
+                    deliveries = item.get("deliveries", [])
+                    if not deliveries:
+                        # Fallback for old scraper or manual items
+                        deliveries = [{"LOT NO": 1, "DELY QTY": ord_qty}]
 
-                for dely in deliveries:
-                    lot_no = to_int(dely.get("LOT NO") or 1)
+                    item_tracking = tracking_map.get(item_id, {})
 
+                    for dely in deliveries:
+                        lot_no = to_int(dely.get("LOT NO") or 1)
 
-                    db.execute(
-                        """
-                        INSERT INTO purchase_order_deliveries (
-                            id, po_item_id, lot_no, ord_qty, dely_date, entry_allow_date, 
-                            dest_code, remarks, manual_override_qty, dsp_qty, rcd_qty
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)
+                        dely_data = {
+                            "id": str(uuid.uuid4()),
+                            "po_item_id": item_id,
+                            "lot_no": lot_no,
+                            "ord_qty": to_qty(dely.get("DELY QTY") or ord_qty),
+                            "dely_date": normalize_date(dely.get("DELY DATE")),
+                            "entry_allow_date": normalize_date(dely.get("ENTRY ALLOW DATE")),
+                            "dest_code": to_int(dely.get("DEST CODE")),
+                            "remarks": dely.get("REMARKS"),
+                            "manual_override_qty": dely.get("manual_override_qty") or item_tracking.get(lot_no, {}).get("manual", 0),
+                            "dsp_qty": 0, # Default
+                            "rcd_qty": 0, # Default
+                        }
+                        deliveries_to_insert.append(dely_data)
+
+                # Batch Insert Deliveries
+                if deliveries_to_insert:
+                    dely_keys = [
+                        "id", "po_item_id", "lot_no", "ord_qty", "dely_date",
+                        "entry_allow_date", "dest_code", "remarks",
+                        "manual_override_qty", "dsp_qty", "rcd_qty"
+                    ]
+                    dely_cols = ", ".join(dely_keys)
+                    dely_placeholders = ", ".join([f":{k}" for k in dely_keys])
+
+                    db.executemany(
+                        f"""
+                        INSERT INTO purchase_order_deliveries ({dely_cols})
+                        VALUES ({dely_placeholders})
                         """,
-                        (
-                            str(uuid.uuid4()),
-                            item_id,
-                            lot_no,
-                            to_qty(dely.get("DELY QTY") or ord_qty),
-                            normalize_date(dely.get("DELY DATE")),
-                            normalize_date(dely.get("ENTRY ALLOW DATE")), # No default
-                            to_int(dely.get("DEST CODE")),
-                            dely.get("REMARKS"),
-                            dely.get("manual_override_qty") or existing_tracking.get(lot_no, {}).get("manual", 0),
-                        ),
+                        deliveries_to_insert
                     )
 
             # 9. Handle Cancelled Items (Amendments)
